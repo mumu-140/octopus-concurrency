@@ -15,6 +15,7 @@ import { toast } from '@/components/common/Toast';
 import { useTranslations } from 'next-intl';
 import { useEffect, useRef, useState } from 'react';
 import { RefreshCw, X, Plus } from 'lucide-react';
+import { mergePresetHeaders, UA_PRESETS } from './ua-presets';
 
 export interface ChannelKeyFormItem {
     id?: number;
@@ -40,6 +41,7 @@ export interface ChannelFormData {
     custom_model: string;
     enabled: boolean;
     max_concurrency: number;
+    max_rpm: number;
     auto_sync: boolean;
     auto_group: AutoGroupType;
     match_regex: string;
@@ -224,6 +226,15 @@ export function ChannelForm({
         onFormDataChange({ ...formData, custom_header: curr.filter((_, i) => i !== idx) });
     };
 
+    const handleUAPreset = (presetID: string) => {
+        const preset = UA_PRESETS.find((item) => item.id === presetID);
+        if (!preset) return;
+        onFormDataChange({
+            ...formData,
+            custom_header: mergePresetHeaders(formData.custom_header ?? [], preset),
+        });
+    };
+
     return (
         <form onSubmit={onSubmit} className="space-y-4 px-1">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -258,6 +269,25 @@ export function ChannelForm({
                         })}
                     />
                     <p className="text-xs text-muted-foreground">{t('maxConcurrencyHint')}</p>
+                </div>
+
+                <div className="space-y-2">
+                    <label htmlFor={`${idPrefix}-max-rpm`} className="text-sm font-medium text-card-foreground">
+                        {t('maxRPM')}
+                    </label>
+                    <Input
+                        className="rounded-xl"
+                        id={`${idPrefix}-max-rpm`}
+                        type="number"
+                        min={0}
+                        step={1}
+                        value={formData.max_rpm}
+                        onChange={(event) => onFormDataChange({
+                            ...formData,
+                            max_rpm: Math.max(0, Number.parseInt(event.target.value || '0', 10) || 0),
+                        })}
+                    />
+                    <p className="text-xs text-muted-foreground">{t('maxRPMHint')}</p>
                 </div>
 
                 <div className="space-y-2">
@@ -537,6 +567,16 @@ export function ChannelForm({
                                     {t('customHeaderAdd')}
                                 </Button>
                             </div>
+                            <Select onValueChange={handleUAPreset}>
+                                <SelectTrigger className="rounded-xl w-full">
+                                    <SelectValue placeholder={t('uaPresetPlaceholder')} />
+                                </SelectTrigger>
+                                <SelectContent className="rounded-xl">
+                                    {UA_PRESETS.map((preset) => (
+                                        <SelectItem key={preset.id} value={preset.id}>{preset.label}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
                             <div className="space-y-2">
                                 {(formData.custom_header ?? []).map((h, idx) => (
                                     <div key={`hdr-${idx}`} className="flex items-center gap-2">

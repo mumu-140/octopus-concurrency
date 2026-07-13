@@ -45,6 +45,10 @@ func init() {
 		AddRoute(
 			router.NewRoute("/fetch-model", http.MethodPost).
 				Handle(fetchModel),
+		).
+		AddRoute(
+			router.NewRoute("/batch/update", http.MethodPost).
+				Handle(batchUpdateChannels),
 		)
 	router.NewGroupRouter("/api/v1/channel").
 		Use(middleware.Auth()).

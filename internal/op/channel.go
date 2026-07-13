@@ -52,6 +52,9 @@ func ChannelCreate(channel *model.Channel, ctx context.Context) error {
 	if channel.MaxConcurrency < 0 {
 		return fmt.Errorf("max concurrency must be greater than or equal to 0")
 	}
+	if channel.MaxRPM < 0 {
+		return fmt.Errorf("max rpm must be greater than or equal to 0")
+	}
 	if channel.ProxyMode == "" {
 		channel.ProxyMode = model.ProxyUsageModeDirect
 	}
@@ -206,6 +209,14 @@ func ChannelUpdate(req *model.ChannelUpdateRequest, ctx context.Context) (*model
 		}
 		selectFields = append(selectFields, "max_concurrency")
 		updates.MaxConcurrency = *req.MaxConcurrency
+	}
+	if req.MaxRPM != nil {
+		if *req.MaxRPM < 0 {
+			tx.Rollback()
+			return nil, fmt.Errorf("max rpm must be greater than or equal to 0")
+		}
+		selectFields = append(selectFields, "max_rpm")
+		updates.MaxRPM = *req.MaxRPM
 	}
 	if req.BaseUrls != nil {
 		selectFields = append(selectFields, "base_urls")

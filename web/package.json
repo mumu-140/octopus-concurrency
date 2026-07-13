@@ -1,6 +1,6 @@
 {
   "name": "octopus",
-  "version": "0.9.0-mumu.1",
+  "version": "0.10.0-mumu.1",
   "private": true,
   "scripts": {
     "dev": "next dev",

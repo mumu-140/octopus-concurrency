@@ -10,4 +10,5 @@ func ResetStateByChannel(channelID int) {
 	resetCircuitBreakerByChannel(channelID)
 	resetStickyByChannel(channelID)
 	resetConcurrencyByChannel(channelID)
+	resetRateByChannel(channelID)
 }

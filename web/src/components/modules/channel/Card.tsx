@@ -13,7 +13,7 @@ import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/animate-ui
 import { Switch } from '@/components/ui/switch';
 import { toast } from '@/components/common/Toast';
 
-export function Card({ channel, stats, layout = 'grid' }: { channel: Channel; stats: StatsMetricsFormatted; layout?: 'grid' | 'list' }) {
+export function Card({ channel, stats, layout = 'grid', selected = false, onSelect }: { channel: Channel; stats: StatsMetricsFormatted; layout?: 'grid' | 'list'; selected?: boolean; onSelect?: (selected: boolean) => void }) {
     const t = useTranslations('channel.card');
     const tForm = useTranslations('channel.form');
     const tSections = useTranslations('channel.detail.sections');
@@ -50,8 +50,9 @@ export function Card({ channel, stats, layout = 'grid' }: { channel: Channel; st
     return (
         <MorphingDialog>
             <MorphingDialogTrigger className="w-full">
-                <article className="flex flex-col gap-4 rounded-3xl border border-border bg-card text-card-foreground p-4 transition-all duration-300">
+                <article className={`flex flex-col gap-4 rounded-3xl border bg-card text-card-foreground p-4 transition-all duration-300 ${selected ? 'border-primary ring-2 ring-primary/20' : 'border-border'}`}>
                     <header className="relative flex items-center justify-between gap-2">
+                        {onSelect ? <input type="checkbox" aria-label={`选择 ${channel.name}`} checked={selected} onChange={(e) => onSelect(e.target.checked)} onClick={(e) => e.stopPropagation()} className="size-4 shrink-0 accent-primary" /> : null}
                         <div className="min-w-0 flex-1">
                             <Tooltip side="top" sideOffset={10} align="center">
                                 <TooltipTrigger asChild>

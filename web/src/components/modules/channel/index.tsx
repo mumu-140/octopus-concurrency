@@ -15,6 +15,8 @@ import {
     useJumpStore,
 } from '@/stores/jump';
 import { useChannelTabStore } from './tab-store';
+import { Button } from '@/components/ui/button';
+import { BatchEditDialog } from './BatchEditDialog';
 
 type ChannelPendingJump = PendingJump & { target: ChannelJumpTarget };
 
@@ -28,6 +30,8 @@ export function Channel() {
     const sortField = useToolbarViewOptionsStore((s) => s.getSortField(pageKey));
     const sortOrder = useToolbarViewOptionsStore((s) => s.getSortOrder(pageKey));
     const [highlightedChannelId, setHighlightedChannelId] = useState<number | null>(null);
+    const [selectedChannelIds, setSelectedChannelIds] = useState<Set<number>>(new Set());
+    const [batchOpen, setBatchOpen] = useState(false);
     const activeTab = useChannelTabStore((s) => s.activeTab);
     const channelCardRefs = useRef<Map<number, HTMLDivElement>>(new Map());
 
@@ -113,9 +117,19 @@ export function Channel() {
                 highlightedChannelId === item.raw.id && 'ring-2 ring-primary/35 ring-offset-2 ring-offset-background',
             )}
         >
-            <Card channel={item.raw} stats={item.formatted} layout={layout} />
+            <Card
+                channel={item.raw}
+                stats={item.formatted}
+                layout={layout}
+                selected={selectedChannelIds.has(item.raw.id)}
+                onSelect={(selected) => setSelectedChannelIds((current) => {
+                    const next = new Set(current);
+                    if (selected) next.add(item.raw.id); else next.delete(item.raw.id);
+                    return next;
+                })}
+            />
         </div>
-    ), [highlightedChannelId, layout, setChannelCardRef]);
+    ), [highlightedChannelId, layout, selectedChannelIds, setChannelCardRef]);
 
     const manualColumnCompute = useCallback((width: number) => {
         if (layout === 'list') return 1;
@@ -125,8 +139,15 @@ export function Channel() {
         return Math.max(1, Math.min(6, cols));
     }, [layout]);
 
-    const manualHeader = targetedManagedChannel ? (
+    const manualHeader = (
         <section className="space-y-3 px-1 pb-4">
+            <div className="flex flex-wrap items-center gap-2 rounded-md border bg-background/80 p-3">
+                <Button size="sm" variant="outline" onClick={() => setSelectedChannelIds(new Set(visibleManualChannels.map((item) => item.raw.id)))}>选择当前结果</Button>
+                <Button size="sm" variant="ghost" disabled={selectedChannelIds.size === 0} onClick={() => setSelectedChannelIds(new Set())}>清除选择</Button>
+                <span className="text-sm text-muted-foreground">已选择 {selectedChannelIds.size} 个渠道</span>
+                <Button size="sm" className="ml-auto" disabled={selectedChannelIds.size === 0} onClick={() => setBatchOpen(true)}>批量编辑</Button>
+            </div>
+            {targetedManagedChannel ? <>
             <div>
                 <div className="text-sm font-semibold">定位的托管渠道</div>
                 <div className="text-xs text-muted-foreground">
@@ -134,8 +155,9 @@ export function Channel() {
                 </div>
             </div>
             {renderChannelCard(targetedManagedChannel)}
+            </> : null}
         </section>
-    ) : undefined;
+    );
 
     const manualFooter = isLoading ? (
         <div className={cn('grid gap-4', layout === 'list' ? 'grid-cols-1' : 'md:grid-cols-2 lg:grid-cols-3')}>
@@ -155,6 +177,7 @@ export function Channel() {
 
     return (
         <div className="flex h-full min-h-0 flex-col">
+            <BatchEditDialog ids={[...selectedChannelIds]} open={batchOpen} onOpenChange={setBatchOpen} onDone={() => setSelectedChannelIds(new Set())} />
             <div className="relative flex-1 min-h-0">
                 <AnimatePresence mode="wait" initial={false}>
                     <motion.div

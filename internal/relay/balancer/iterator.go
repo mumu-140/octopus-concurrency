@@ -134,6 +134,15 @@ func (it *Iterator) SkipCapacity(channelID, channelKeyID int, channelName, msg s
 	})
 }
 
+func (it *Iterator) SkipRateLimit(channelID, channelKeyID int, channelName, msg string) {
+	it.count++
+	it.attempts = append(it.attempts, model.ChannelAttempt{
+		ChannelID: channelID, ChannelKeyID: channelKeyID, ChannelName: channelName,
+		ModelName: it.candidates[it.index].ModelName, AttemptNum: it.count,
+		Status: model.AttemptRateLimit, Sticky: it.IsSticky(), Msg: msg,
+	})
+}
+
 // SkipCircuitBreak 检查熔断状态，若已熔断自动记录（含剩余冷却时间）并返回 true
 func (it *Iterator) SkipCircuitBreak(channelID, channelKeyID int, channelName string) bool {
 	modelName := it.candidates[it.index].ModelName

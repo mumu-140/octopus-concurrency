@@ -140,4 +140,5 @@ func Reset() {
 	globalBreaker = sync.Map{}
 	globalSession = sync.Map{}
 	globalConcurrency = sync.Map{}
+	globalChannelRate = sync.Map{}
 }

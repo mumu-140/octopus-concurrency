@@ -65,6 +65,7 @@ type Channel struct {
 	Type           outbound.OutboundType `json:"type"`
 	Enabled        bool                  `json:"enabled" gorm:"default:true"`
 	MaxConcurrency int                   `json:"max_concurrency" gorm:"not null;default:3"`
+	MaxRPM         int                   `json:"max_rpm" gorm:"not null;default:0"`
 	BaseUrls       []BaseUrl             `json:"base_urls" gorm:"serializer:json"`
 	Keys           []ChannelKey          `json:"keys" gorm:"foreignKey:ChannelID"`
 	Model          string                `json:"model"`
@@ -143,6 +144,7 @@ type ChannelUpdateRequest struct {
 	Type           *outbound.OutboundType `json:"type,omitempty"`
 	Enabled        *bool                  `json:"enabled,omitempty"`
 	MaxConcurrency *int                   `json:"max_concurrency,omitempty"`
+	MaxRPM         *int                   `json:"max_rpm,omitempty"`
 	BaseUrls       *[]BaseUrl             `json:"base_urls,omitempty"`
 	Model          *string                `json:"model,omitempty"`
 	CustomModel    *string                `json:"custom_model,omitempty"`
@@ -162,6 +164,23 @@ type ChannelUpdateRequest struct {
 	KeysToDelete []int                     `json:"keys_to_delete,omitempty"`
 
 	BypassManagedCheck bool `json:"-"` // 内部使用：允许投影逻辑更新 managed channel
+}
+
+type ChannelBatchUpdateRequest struct {
+	IDs            []int          `json:"ids" binding:"required"`
+	MaxConcurrency *int           `json:"max_concurrency,omitempty"`
+	MaxRPM         *int           `json:"max_rpm,omitempty"`
+	AutoSync       *bool          `json:"auto_sync,omitempty"`
+	HeaderMode     string         `json:"header_mode,omitempty"`
+	HeaderUpserts  []CustomHeader `json:"header_upserts,omitempty"`
+	HeaderDeletes  []string       `json:"header_deletes,omitempty"`
+	RefreshModels  bool           `json:"refresh_models,omitempty"`
+}
+
+type ChannelBatchUpdateResult struct {
+	Updated       int            `json:"updated"`
+	ModelsUpdated int            `json:"models_updated"`
+	Errors        map[int]string `json:"errors,omitempty"`
 }
 
 type ChannelKeyAddRequest struct {

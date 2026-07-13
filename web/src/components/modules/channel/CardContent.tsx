@@ -41,6 +41,7 @@ export function CardContent({ channel, stats }: { channel: Channel; stats: Stats
         type: channel.type,
         enabled: channel.enabled,
         max_concurrency: channel.max_concurrency ?? 3,
+        max_rpm: channel.max_rpm ?? 0,
         base_urls: channel.base_urls?.length ? channel.base_urls : [{ url: '', delay: 0 }],
         custom_header: channel.custom_header ?? [],
         ws_mode: channel.ws_mode ?? 'inherit',
@@ -83,6 +84,7 @@ export function CardContent({ channel, stats }: { channel: Channel; stats: Stats
         if (formData.type !== channel.type) req.type = formData.type;
         if (formData.enabled !== channel.enabled) req.enabled = formData.enabled;
         if (formData.max_concurrency !== (channel.max_concurrency ?? 3)) req.max_concurrency = formData.max_concurrency;
+        if (formData.max_rpm !== (channel.max_rpm ?? 0)) req.max_rpm = formData.max_rpm;
         if (!baseUrlsEqual(formData.base_urls, channel.base_urls)) {
             req.base_urls = (formData.base_urls ?? []).filter((u) => u.url.trim()).map((u) => ({
                 url: u.url.trim(),

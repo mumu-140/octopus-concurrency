@@ -65,6 +65,7 @@ export type Channel = {
     type: ChannelType;
     enabled: boolean;
     max_concurrency: number;
+    max_rpm: number;
     base_urls: BaseUrl[];
     keys: ChannelKey[];
     model: string;
@@ -97,6 +98,7 @@ export type CreateChannelRequest = {
     type: ChannelType;
     enabled?: boolean;
     max_concurrency?: number;
+    max_rpm?: number;
     base_urls: BaseUrl[];
     keys: Array<Pick<ChannelKey, 'enabled' | 'channel_key' | 'remark'>>;
     model: string;
@@ -120,6 +122,7 @@ export type UpdateChannelRequest = {
     type?: ChannelType;
     enabled?: boolean;
     max_concurrency?: number;
+    max_rpm?: number;
     base_urls?: BaseUrl[];
     model?: string;
     custom_model?: string;
@@ -147,6 +150,23 @@ export type FetchModelRequest = {
     custom_header?: CustomHeader[];
 };
 
+export type BatchUpdateChannelsRequest = {
+    ids: number[];
+    max_concurrency?: number;
+    max_rpm?: number;
+    auto_sync?: boolean;
+    header_mode?: 'merge' | 'replace';
+    header_upserts?: CustomHeader[];
+    header_deletes?: string[];
+    refresh_models?: boolean;
+};
+
+export type BatchUpdateChannelsResult = {
+    updated: number;
+    models_updated: number;
+    errors?: Record<string, string>;
+};
+
 /**
  * 获取渠道列表 Hook
  * 
@@ -169,6 +189,8 @@ export function useChannelList() {
                 ...item,
                 managed: item.managed ?? false,
                 managed_source: item.managed_source ?? null,
+                max_concurrency: item.max_concurrency ?? 3,
+                max_rpm: item.max_rpm ?? 0,
                 base_urls: item.base_urls ?? [],
                 custom_header: item.custom_header ?? [],
                 ws_mode: item.ws_mode ?? 'inherit',
@@ -261,6 +283,19 @@ export function useUpdateChannel() {
         },
         onError: (error) => {
             logger.error('渠道更新失败:', error);
+        },
+    });
+}
+
+export function useBatchUpdateChannels() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: (data: BatchUpdateChannelsRequest) =>
+            apiClient.post<BatchUpdateChannelsResult>('/api/v1/channel/batch/update', data),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['channels', 'list'] });
+            queryClient.invalidateQueries({ queryKey: ['models', 'channel'] });
+            queryClient.invalidateQueries({ queryKey: ['groups', 'list'] });
         },
     });
 }

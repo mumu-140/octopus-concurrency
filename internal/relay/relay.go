@@ -162,6 +162,7 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 	var lastErr error
 	var lastResult attemptResult
 	capacitySkipped := false
+	rateSkipped := false
 
 	// 同通道重试次数：启用时使用配置值，否则 1 次（不重试）
 	maxSameChannelRetries := 1
@@ -255,6 +256,13 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 			capacitySkipped = true
 			iter.SkipCapacity(channel.ID, usedKey.ID, channel.Name,
 				fmt.Sprintf("channel at max concurrency (%d)", channel.MaxConcurrency))
+			continue
+		}
+		if !balancer.TryConsumeChannelRPM(channel.ID, channel.MaxRPM, time.Now()) {
+			balancer.ReleaseChannel(channel.ID)
+			rateSkipped = true
+			iter.SkipRateLimit(channel.ID, usedKey.ID, channel.Name,
+				fmt.Sprintf("channel at max rpm (%d)", channel.MaxRPM))
 			continue
 		}
 
@@ -382,6 +390,11 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 		return
 	}
 	metrics.SaveWithChannelStats(c.Request.Context(), false, lastErr, iter.Attempts(), false)
+	if lastErr == nil && rateSkipped {
+		c.Header("Retry-After", "60")
+		hb.FlushOrError(c, http.StatusTooManyRequests, "all eligible channels are at max rpm")
+		return
+	}
 	if lastErr == nil && capacitySkipped {
 		c.Header("Retry-After", "1")
 		hb.FlushOrError(c, http.StatusServiceUnavailable, "all eligible channels are at max concurrency")
