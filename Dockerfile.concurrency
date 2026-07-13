@@ -1,0 +1,4 @@
+FROM hureru/octopus:latest
+
+COPY build/docker/linux/amd64/octopus /app/octopus
+RUN chmod +x /app/octopus
