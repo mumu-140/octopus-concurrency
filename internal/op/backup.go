@@ -70,6 +70,9 @@ func DBExportAll(ctx context.Context, includeLogs, includeStats bool) (*model.DB
 	if err := conn.Find(&d.GroupItems).Error; err != nil {
 		return nil, fmt.Errorf("export group_items: %w", err)
 	}
+	if err := conn.Find(&d.GroupPresets).Error; err != nil {
+		return nil, fmt.Errorf("export group_presets: %w", err)
+	}
 	if err := conn.Find(&d.LLMInfos).Error; err != nil {
 		return nil, fmt.Errorf("export llm_infos: %w", err)
 	}
@@ -78,6 +81,18 @@ func DBExportAll(ctx context.Context, includeLogs, includeStats bool) (*model.DB
 	}
 	if err := conn.Find(&d.Settings).Error; err != nil {
 		return nil, fmt.Errorf("export settings: %w", err)
+	}
+	if err := conn.Find(&d.ProtocolRoutingConfigs).Error; err != nil {
+		return nil, fmt.Errorf("export protocol_routing_configs: %w", err)
+	}
+	if err := conn.Find(&d.ProtocolPolicyRevisions).Error; err != nil {
+		return nil, fmt.Errorf("export protocol_policy_revisions: %w", err)
+	}
+	if err := conn.Find(&d.ChannelModelProtocolOverrides).Error; err != nil {
+		return nil, fmt.Errorf("export channel_model_protocol_overrides: %w", err)
+	}
+	if err := conn.Find(&d.ChannelProtocolProfiles).Error; err != nil {
+		return nil, fmt.Errorf("export channel_protocol_profiles: %w", err)
 	}
 
 	if includeStats {
@@ -151,6 +166,7 @@ func DBImportIncremental(ctx context.Context, dump *model.DBDump) (*model.DBImpo
 
 	err := conn.Transaction(func(tx *gorm.DB) error {
 		channelIDMap := make(map[int]int)
+		channelKeyIDMap := make(map[int]int)
 		proxyConfigIDMap := make(map[int]int)
 		siteIDMap := make(map[int]int)
 		accountIDMap := make(map[int]int)
@@ -241,6 +257,9 @@ func DBImportIncremental(ctx context.Context, dump *model.DBDump) (*model.DBImpo
 			}
 			if err := tx.Create(&key).Error; err != nil {
 				return fmt.Errorf("import channel_keys: %w", err)
+			}
+			if dump.ChannelKeys[i].ID != 0 {
+				channelKeyIDMap[dump.ChannelKeys[i].ID] = key.ID
 			}
 			res.RowsAffected["channel_keys"]++
 		}
@@ -441,6 +460,95 @@ func DBImportIncremental(ctx context.Context, dump *model.DBDump) (*model.DBImpo
 				return fmt.Errorf("import group_items: %w", err)
 			}
 			res.RowsAffected["group_items"]++
+		}
+
+		// 11b. GroupPresets (remap group_id, dedup by name)
+		for i := range dump.GroupPresets {
+			preset := dump.GroupPresets[i]
+			preset.ID = 0
+			if newID, ok := groupIDMap[preset.GroupID]; ok {
+				preset.GroupID = newID
+			}
+			var existing model.GroupPreset
+			if err := tx.Where("group_id = ? AND name = ?", preset.GroupID, preset.Name).First(&existing).Error; err == nil {
+				continue
+			} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return fmt.Errorf("import group_presets: %w", err)
+			}
+			if err := tx.Create(&preset).Error; err != nil {
+				return fmt.Errorf("import group_presets: %w", err)
+			}
+			res.RowsAffected["group_presets"]++
+		}
+
+		// 11c. ProtocolRoutingConfigs (singleton upsert by id=1)
+		if len(dump.ProtocolRoutingConfigs) > 0 {
+			cfg := dump.ProtocolRoutingConfigs[0]
+			cfg.ID = 1
+			if err := tx.Where("id = ?", 1).Assign(cfg).FirstOrCreate(&cfg).Error; err != nil {
+				return fmt.Errorf("import protocol_routing_configs: %w", err)
+			}
+			res.RowsAffected["protocol_routing_configs"]++
+		}
+
+		// 11d. ProtocolPolicyRevisions (append-only audit chain; keep revision number, dedup by PK)
+		for i := range dump.ProtocolPolicyRevisions {
+			rev := dump.ProtocolPolicyRevisions[i]
+			var existing model.ProtocolPolicyRevision
+			if err := tx.Where("revision = ?", rev.Revision).First(&existing).Error; err == nil {
+				continue
+			} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return fmt.Errorf("import protocol_policy_revisions: %w", err)
+			}
+			if err := tx.Create(&rev).Error; err != nil {
+				return fmt.Errorf("import protocol_policy_revisions: %w", err)
+			}
+			res.RowsAffected["protocol_policy_revisions"]++
+		}
+
+		// 11e. ChannelModelProtocolOverrides (remap channel_id + channel_key_id, dedup by unique index)
+		for i := range dump.ChannelModelProtocolOverrides {
+			ov := dump.ChannelModelProtocolOverrides[i]
+			ov.ID = 0
+			if newID, ok := channelIDMap[ov.ChannelID]; ok {
+				ov.ChannelID = newID
+			}
+			if ov.ChannelKeyID != 0 {
+				if newID, ok := channelKeyIDMap[ov.ChannelKeyID]; ok {
+					ov.ChannelKeyID = newID
+				}
+			}
+			var existing model.ChannelModelProtocolOverride
+			if err := tx.Where("channel_id = ? AND channel_key_id = ? AND upstream_model = ?",
+				ov.ChannelID, ov.ChannelKeyID, ov.UpstreamModel).First(&existing).Error; err == nil {
+				continue
+			} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return fmt.Errorf("import channel_model_protocol_overrides: %w", err)
+			}
+			if err := tx.Create(&ov).Error; err != nil {
+				return fmt.Errorf("import channel_model_protocol_overrides: %w", err)
+			}
+			res.RowsAffected["channel_model_protocol_overrides"]++
+		}
+
+		// 11f. ChannelProtocolProfiles (remap channel_id, dedup by channel_id + protocol)
+		for i := range dump.ChannelProtocolProfiles {
+			prof := dump.ChannelProtocolProfiles[i]
+			prof.ID = 0
+			if newID, ok := channelIDMap[prof.ChannelID]; ok {
+				prof.ChannelID = newID
+			}
+			var existing model.ChannelProtocolProfile
+			if err := tx.Where("channel_id = ? AND protocol = ?",
+				prof.ChannelID, prof.Protocol).First(&existing).Error; err == nil {
+				continue
+			} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return fmt.Errorf("import channel_protocol_profiles: %w", err)
+			}
+			if err := tx.Create(&prof).Error; err != nil {
+				return fmt.Errorf("import channel_protocol_profiles: %w", err)
+			}
+			res.RowsAffected["channel_protocol_profiles"]++
 		}
 
 		// 12. LLMInfos (upsert by name - unchanged)
@@ -820,6 +928,9 @@ func DBExportZip(ctx context.Context, w io.Writer, includeLogs, includeStats boo
 	if err := writeZipTable(ctx, zw, conn, "group_items.json", &[]model.GroupItem{}); err != nil {
 		return err
 	}
+	if err := writeZipTable(ctx, zw, conn, "group_presets.json", &[]model.GroupPreset{}); err != nil {
+		return err
+	}
 	if err := writeZipTable(ctx, zw, conn, "llm_infos.json", &[]model.LLMInfo{}); err != nil {
 		return err
 	}
@@ -827,6 +938,18 @@ func DBExportZip(ctx context.Context, w io.Writer, includeLogs, includeStats boo
 		return err
 	}
 	if err := writeZipTable(ctx, zw, conn, "settings.json", &[]model.Setting{}); err != nil {
+		return err
+	}
+	if err := writeZipTable(ctx, zw, conn, "protocol_routing_configs.json", &[]model.ProtocolRoutingConfig{}); err != nil {
+		return err
+	}
+	if err := writeZipTable(ctx, zw, conn, "protocol_policy_revisions.json", &[]model.ProtocolPolicyRevision{}); err != nil {
+		return err
+	}
+	if err := writeZipTable(ctx, zw, conn, "channel_model_protocol_overrides.json", &[]model.ChannelModelProtocolOverride{}); err != nil {
+		return err
+	}
+	if err := writeZipTable(ctx, zw, conn, "channel_protocol_profiles.json", &[]model.ChannelProtocolProfile{}); err != nil {
 		return err
 	}
 
