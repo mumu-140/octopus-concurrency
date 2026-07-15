@@ -252,6 +252,10 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 			continue
 		}
 
+		// T08 observe：影子协议决策（默认关闭；只记录不改变行为）
+		observeProtocolDecision(channel.Type, channel.ID, usedKey.ID,
+			requestModel, item.ModelName, internalRequest, true)
+
 		if !balancer.TryAcquireChannel(channel.ID, channel.MaxConcurrency) {
 			capacitySkipped = true
 			iter.SkipCapacity(channel.ID, usedKey.ID, channel.Name,
