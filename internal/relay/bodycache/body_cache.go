@@ -28,11 +28,11 @@ const (
 )
 
 const (
-	envBodyMaxMB             = "OCTOPUS_IMAGES_BODY_MAX_MB"
-	envMemoryThresholdMB     = "OCTOPUS_IMAGES_BODY_MEMORY_THRESHOLD_MB"
-	envTmpDir                = "OCTOPUS_IMAGES_BODY_TMP_DIR"
-	envTmpCleanupHours       = "OCTOPUS_IMAGES_BODY_TMP_CLEANUP_HOURS"
-	bytesPerMB         int64 = 1024 * 1024
+	envBodyMaxMB               = "OCTOPUS_IMAGES_BODY_MAX_MB"
+	envMemoryThresholdMB       = "OCTOPUS_IMAGES_BODY_MEMORY_THRESHOLD_MB"
+	envTmpDir                  = "OCTOPUS_IMAGES_BODY_TMP_DIR"
+	envTmpCleanupHours         = "OCTOPUS_IMAGES_BODY_TMP_CLEANUP_HOURS"
+	bytesPerMB           int64 = 1024 * 1024
 )
 
 // BodyTooLargeError 表示读取请求体时超过最大限制。
@@ -86,17 +86,21 @@ func New(r io.ReadCloser) (*BodyCache, error) {
 
 	n, err := io.Copy(sw, limited)
 	if err != nil {
-		// 出错时确保清理已创建的临时文件
-		_ = sw.Close()
+		if cleanupErr := sw.Cleanup(); cleanupErr != nil {
+			return nil, errors.Join(err, fmt.Errorf("cleanup spilled images body: %w", cleanupErr))
+		}
 		return nil, err
 	}
 
 	if n > maxBytes {
-		_ = sw.Close()
-		return nil, &BodyTooLargeError{
+		tooLargeErr := &BodyTooLargeError{
 			MaxBytes:    maxBytes,
 			ActualBytes: n,
 		}
+		if cleanupErr := sw.Cleanup(); cleanupErr != nil {
+			return nil, errors.Join(tooLargeErr, fmt.Errorf("cleanup spilled images body: %w", cleanupErr))
+		}
+		return nil, tooLargeErr
 	}
 
 	bc := &BodyCache{
@@ -343,6 +347,22 @@ func (w *spillWriter) Bytes() []byte {
 // TmpPath 返回临时文件路径（仅在已落盘时有效）。
 func (w *spillWriter) TmpPath() string {
 	return w.tmpPath
+}
+
+// Cleanup closes and removes a partially written spill file.
+func (w *spillWriter) Cleanup() error {
+	closeErr := w.Close()
+	if w.tmpPath == "" {
+		return closeErr
+	}
+
+	path := w.tmpPath
+	w.tmpPath = ""
+	removeErr := os.Remove(path)
+	if os.IsNotExist(removeErr) {
+		removeErr = nil
+	}
+	return errors.Join(closeErr, removeErr)
 }
 
 // Close 关闭文件句柄（不删除文件）。

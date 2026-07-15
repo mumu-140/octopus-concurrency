@@ -231,12 +231,12 @@ func ImagesHandler(endpoint string, c *gin.Context) {
 			return
 		}
 
-		lastErr = fmt.Errorf("channel %s failed: %v", channel.Name, fwdErr)
+		lastErr = fmt.Errorf("channel %s failed: %w", channel.Name, fwdErr)
 	}
 
 	// 所有通道都失败
 	metrics.SaveWithChannelStats(ctx, false, lastErr, iter.Attempts(), false)
-	hb.FlushOrError(c, http.StatusBadGateway, "all channels failed")
+	writeFinalImagesError(c, hb, lastErr)
 }
 
 type imagesUsage struct {
@@ -621,7 +621,7 @@ func imagesAttempt(
 	if stream {
 		if respUp.StatusCode < 200 || respUp.StatusCode >= 300 {
 			b, _ := io.ReadAll(io.LimitReader(respUp.Body, imagesUpstreamErrorBodyLimit))
-			return respUp.StatusCode, false, nil, upstreamCT, fmt.Errorf("upstream error: %d: %s", respUp.StatusCode, string(b))
+			return respUp.StatusCode, false, nil, upstreamCT, newImagesUpstreamError(respUp.StatusCode, respUp.Header.Get("Retry-After"), b)
 		}
 		u, w, err := proxySSE(ctx, c, respUp, firstTokenTimeOutSec, metrics, hb)
 		return respUp.StatusCode, w, u, upstreamCT, err
@@ -630,7 +630,7 @@ func imagesAttempt(
 	// 非流式：2xx 透传，否则读取限长错误体用于错误信息与重试判定
 	if respUp.StatusCode < 200 || respUp.StatusCode >= 300 {
 		b, _ := io.ReadAll(io.LimitReader(respUp.Body, imagesUpstreamErrorBodyLimit))
-		return respUp.StatusCode, false, nil, upstreamCT, fmt.Errorf("upstream error: %d: %s", respUp.StatusCode, string(b))
+		return respUp.StatusCode, false, nil, upstreamCT, newImagesUpstreamError(respUp.StatusCode, respUp.Header.Get("Retry-After"), b)
 	}
 
 	u, w, err := proxyNonStream(c, respUp)
@@ -812,7 +812,11 @@ func proxySSE(ctx context.Context, c *gin.Context, respUp *http.Response, firstT
 		select {
 		case <-ctx.Done():
 			log.Infof("client disconnected, stopping stream")
-			return completedScanner.Usage(), !firstWrite, nil
+			cancelErr := contextError(ctx)
+			if cancelErr == nil {
+				cancelErr = context.Canceled
+			}
+			return completedScanner.Usage(), !firstWrite, cancelErr
 
 		case <-firstTokenC:
 			log.Warnf("first token timeout (%ds), switching channel", firstTokenTimeOutSec)
@@ -821,15 +825,15 @@ func proxySSE(ctx context.Context, c *gin.Context, respUp *http.Response, firstT
 
 		case <-heartbeatC:
 			if err := writeSSEHeartbeat(c.Writer); err != nil {
-				return completedScanner.Usage(), false, err
+				return completedScanner.Usage(), c.Writer.Written(), err
 			}
 
 		case r, ok := <-results:
 			if !ok {
-				return completedScanner.Usage(), !firstWrite, nil
+				return completedScanner.Usage(), !firstWrite, errors.New("upstream SSE ended before image_generation.completed")
 			}
 			if r.eof {
-				return completedScanner.Usage(), !firstWrite, nil
+				return completedScanner.Usage(), !firstWrite, errors.New("upstream SSE ended before image_generation.completed")
 			}
 			if r.err != nil {
 				return completedScanner.Usage(), !firstWrite, fmt.Errorf("failed to read stream line: %w", r.err)
@@ -837,16 +841,22 @@ func proxySSE(ctx context.Context, c *gin.Context, respUp *http.Response, firstT
 
 			line := r.line
 			trimmed := bytes.TrimRight(line, "\r\n")
+			terminalEvent := ""
 			if len(trimmed) == 0 {
 				// 空行：事件边界
+				terminalEvent = currentEvent
 				currentEvent = ""
 			} else if bytes.HasPrefix(trimmed, []byte("event:")) {
 				currentEvent = strings.TrimSpace(string(trimmed[len("event:"):]))
 			} else if bytes.HasPrefix(trimmed, []byte("data:")) {
 				// 仅在 completed 事件上尝试提取 usage（避免解析/分配巨大 b64_json）
 				payload := bytes.TrimSpace(trimmed[len("data:"):])
-				if currentEvent == "image_generation.completed" || bytes.Contains(payload, []byte(`"type":"image_generation.completed"`)) {
+				switch {
+				case currentEvent == "image_generation.completed" || bytes.Contains(payload, []byte(`"type":"image_generation.completed"`)):
+					currentEvent = "image_generation.completed"
 					completedScanner.Feed(payload)
+				case currentEvent == "image_generation.failed" || bytes.Contains(payload, []byte(`"type":"image_generation.failed"`)):
+					currentEvent = "image_generation.failed"
 				}
 			}
 
@@ -868,6 +878,13 @@ func proxySSE(ctx context.Context, c *gin.Context, respUp *http.Response, firstT
 					firstTokenTimer = nil
 					firstTokenC = nil
 				}
+			}
+
+			switch terminalEvent {
+			case "image_generation.completed":
+				return completedScanner.Usage(), true, nil
+			case "image_generation.failed":
+				return completedScanner.Usage(), true, errors.New("upstream image generation failed")
 			}
 		}
 	}
