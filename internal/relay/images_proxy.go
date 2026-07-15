@@ -119,6 +119,7 @@ func proxySSE(ctx context.Context, c *gin.Context, respUp *http.Response, firstT
 			if cancelErr == nil {
 				cancelErr = context.Canceled
 			}
+			_ = respUp.Body.Close()
 			return completedScanner.Usage(), !firstWrite, cancelErr
 
 		case <-firstTokenC:
