@@ -60,29 +60,30 @@ func (m ChannelWSMode) Normalize() ChannelWSMode {
 }
 
 type Channel struct {
-	ID             int                   `json:"id" gorm:"primaryKey"`
-	Name           string                `json:"name" gorm:"unique;not null"`
-	Type           outbound.OutboundType `json:"type"`
-	Enabled        bool                  `json:"enabled" gorm:"default:true"`
-	MaxConcurrency int                   `json:"max_concurrency" gorm:"not null;default:3"`
-	MaxRPM         int                   `json:"max_rpm" gorm:"not null;default:0"`
-	BaseUrls       []BaseUrl             `json:"base_urls" gorm:"serializer:json"`
-	Keys           []ChannelKey          `json:"keys" gorm:"foreignKey:ChannelID"`
-	Model          string                `json:"model"`
-	CustomModel    string                `json:"custom_model"`
-	ProxyMode      ProxyUsageMode        `json:"proxy_mode" gorm:"type:varchar(16);not null;default:'direct'"`
-	ProxyConfigID  *int                  `json:"proxy_config_id"`
-	Proxy          bool                  `json:"-" gorm:"default:false"`
-	AutoSync       bool                  `json:"auto_sync" gorm:"default:false"`
-	AutoGroup      AutoGroupType         `json:"auto_group" gorm:"default:0"`
-	CustomHeader   []CustomHeader        `json:"custom_header" gorm:"serializer:json"`
-	WSMode         ChannelWSMode         `json:"ws_mode" gorm:"type:varchar(16);not null;default:'inherit'"`
-	ParamOverride  *string               `json:"param_override"`
-	ChannelProxy   *string               `json:"-" gorm:"column:channel_proxy"`
-	Stats          *StatsChannel         `json:"stats,omitempty" gorm:"foreignKey:ChannelID"`
-	MatchRegex     *string               `json:"match_regex"`
-	Managed        bool                  `json:"managed" gorm:"-"`
-	ManagedSource  *ManagedChannelSource `json:"managed_source,omitempty" gorm:"-"`
+	ID                     int                   `json:"id" gorm:"primaryKey"`
+	Name                   string                `json:"name" gorm:"unique;not null"`
+	Type                   outbound.OutboundType `json:"type"`
+	Enabled                bool                  `json:"enabled" gorm:"default:true"`
+	MaxConcurrency         int                   `json:"max_concurrency" gorm:"not null;default:3"`
+	MaxRPM                 int                   `json:"max_rpm" gorm:"not null;default:0"`
+	BaseUrls               []BaseUrl             `json:"base_urls" gorm:"serializer:json"`
+	Keys                   []ChannelKey          `json:"keys" gorm:"foreignKey:ChannelID"`
+	Model                  string                `json:"model"`
+	CustomModel            string                `json:"custom_model"`
+	ProxyMode              ProxyUsageMode        `json:"proxy_mode" gorm:"type:varchar(16);not null;default:'direct'"`
+	ProxyConfigID          *int                  `json:"proxy_config_id"`
+	Proxy                  bool                  `json:"-" gorm:"default:false"`
+	AutoSync               bool                  `json:"auto_sync" gorm:"default:false"`
+	AutoGroup              AutoGroupType         `json:"auto_group" gorm:"default:0"`
+	CustomHeader           []CustomHeader        `json:"custom_header" gorm:"serializer:json"`
+	WSMode                 ChannelWSMode         `json:"ws_mode" gorm:"type:varchar(16);not null;default:'inherit'"`
+	ParamOverride          *string               `json:"param_override"`
+	ChannelProxy           *string               `json:"-" gorm:"column:channel_proxy"`
+	Stats                  *StatsChannel         `json:"stats,omitempty" gorm:"foreignKey:ChannelID"`
+	MatchRegex             *string               `json:"match_regex"`
+	ModelDiscoveryProtocol string                `json:"model_discovery_protocol" gorm:"type:varchar(32);not null;default:'openai_chat'"`
+	Managed                bool                  `json:"managed" gorm:"-"`
+	ManagedSource          *ManagedChannelSource `json:"managed_source,omitempty" gorm:"-"`
 }
 
 func (c *Channel) UnmarshalJSON(data []byte) error {
@@ -122,14 +123,15 @@ type CustomHeader struct {
 }
 
 type ChannelKey struct {
-	ID               int     `json:"id" gorm:"primaryKey"`
-	ChannelID        int     `json:"channel_id"`
-	Enabled          bool    `json:"enabled" gorm:"default:true"`
-	ChannelKey       string  `json:"channel_key"`
-	StatusCode       int     `json:"status_code"`
-	LastUseTimeStamp int64   `json:"last_use_time_stamp"`
-	TotalCost        float64 `json:"total_cost"`
-	Remark           string  `json:"remark"`
+	ID                 int     `json:"id" gorm:"primaryKey"`
+	ChannelID          int     `json:"channel_id"`
+	Enabled            bool    `json:"enabled" gorm:"default:true"`
+	ChannelKey         string  `json:"channel_key"`
+	StatusCode         int     `json:"status_code"`
+	LastUseTimeStamp   int64   `json:"last_use_time_stamp"`
+	TotalCost          float64 `json:"total_cost"`
+	Remark             string  `json:"remark"`
+	CredentialRevision int     `json:"credential_revision" gorm:"not null;default:1"`
 }
 
 type ChannelKeySelectOptions struct {

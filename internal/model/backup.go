@@ -21,9 +21,15 @@ type DBDump struct {
 	SiteChannelBindings []SiteChannelBinding `json:"site_channel_bindings,omitempty"`
 	Groups              []Group              `json:"groups,omitempty"`
 	GroupItems          []GroupItem          `json:"group_items,omitempty"`
+	GroupPresets        []GroupPreset        `json:"group_presets,omitempty"`
 	LLMInfos            []LLMInfo            `json:"llm_infos,omitempty"`
 	APIKeys             []APIKey             `json:"api_keys,omitempty"`
 	Settings            []Setting            `json:"settings,omitempty"`
+
+	ProtocolRoutingConfigs        []ProtocolRoutingConfig        `json:"protocol_routing_configs,omitempty"`
+	ProtocolPolicyRevisions       []ProtocolPolicyRevision       `json:"protocol_policy_revisions,omitempty"`
+	ChannelModelProtocolOverrides []ChannelModelProtocolOverride `json:"channel_model_protocol_overrides,omitempty"`
+	ChannelProtocolProfiles       []ChannelProtocolProfile       `json:"channel_protocol_profiles,omitempty"`
 
 	StatsTotal           []StatsTotal           `json:"stats_total,omitempty"`
 	StatsDaily           []StatsDaily           `json:"stats_daily,omitempty"`
