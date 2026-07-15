@@ -11,8 +11,9 @@ import (
 )
 
 const (
-	imagesUpstreamMessageLimit = 2048
-	imagesRetryAfterLimit      = 128
+	imagesUpstreamErrorBodyLimit = 16 * 1024
+	imagesUpstreamMessageLimit   = 2048
+	imagesRetryAfterLimit        = 128
 )
 
 type imagesUpstreamError struct {
