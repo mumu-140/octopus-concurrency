@@ -1,124 +1,99 @@
-name: release
+name: 发布
 
 on:
   push:
-    branches:
-      - master
+    tags:
+      - "v*-mumu.*"
 
 permissions:
   contents: write
   packages: write
-  
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   release:
-    name: release
+    name: 发布
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: 检出发布提交
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
-          ref: master
 
-      - name: Setup Go
+      - name: 配置 Go
         uses: actions/setup-go@v6
         with:
-          go-version: 'stable'
-    
-      - name: Setup Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: '3.13'
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
 
-      - name: Setup pnpm
+      - name: 配置 pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 'latest'
+          version: 11.13.1
 
-      - name: Setup Node.js
+      - name: 配置 Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 'latest'
-          cache: 'pnpm'
+          node-version: 22.23.1
+          cache: pnpm
           cache-dependency-path: web/pnpm-lock.yaml
 
-      - name: Build
+      - name: 构建发布归档
         run: bash scripts/build.sh release
 
-      - name: Get latest tag
-        id: tag
+      - name: 生成构建元数据
+        id: metadata
+        shell: bash
         run: |
-          LATEST_TAG=$(git describe --tags --abbrev=0)
-          echo "TAG_NAME=$LATEST_TAG" >> $GITHUB_OUTPUT
+          echo "version=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+          echo "commit=$(git rev-parse --short=7 HEAD)" >> "$GITHUB_OUTPUT"
+          echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "tree=$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
+          echo "build_time=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
 
-      - name: Upload Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: build/archives/*
-          prerelease: false
-          tag_name: ${{ steps.tag.outputs.TAG_NAME }}
-
-      - name: Docker meta (Debian)
-        id: meta-debian
-        uses: docker/metadata-action@v5
-        with:
-          images: |
-            ghcr.io/${{ github.repository }}
-            ${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}
-          tags: |
-            type=raw,value=latest
-            type=raw,value=${{ steps.tag.outputs.TAG_NAME }}
-
-      - name: Docker meta (Alpine)
-        id: meta-alpine
-        uses: docker/metadata-action@v5
-        with:
-          images: |
-            ghcr.io/${{ github.repository }}
-            ${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}
-          tags: |
-            type=raw,value=latest-alpine
-            type=raw,value=${{ steps.tag.outputs.TAG_NAME }}-alpine
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set up Docker Buildx
+      - name: 配置 Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Login to GitHub Container Registry
+      - name: 登录 GitHub Container Registry
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Login to Docker Hub
+      - name: 登录 Docker Hub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and push (Alpine)
-        uses: docker/build-push-action@v5
+      - name: 构建并推送生产镜像
+        uses: docker/build-push-action@v6
         with:
           context: .
-          file: ./scripts/dockerfiles/Dockerfile.alpine
+          file: ./Dockerfile.build
           push: true
-          platforms: linux/amd64,linux/i386,linux/arm64,linux/arm/v7
-          tags: ${{ steps.meta-alpine.outputs.tags }}
-          labels: ${{ steps.meta-alpine.outputs.labels }}
+          platforms: linux/amd64
+          tags: |
+            ghcr.io/${{ github.repository }}:${{ steps.metadata.outputs.version }}
+            mumu-140/octopus-concurrency:${{ steps.metadata.outputs.version }}
           build-args: |
-            TARGETPLATFORM
+            GIT_VERSION=${{ steps.metadata.outputs.version }}
+            COMMIT_ID=${{ steps.metadata.outputs.commit }}
+            SOURCE_REVISION=${{ steps.metadata.outputs.revision }}
+            SOURCE_TREE=${{ steps.metadata.outputs.tree }}
+            BUILD_TIME=${{ steps.metadata.outputs.build_time }}
+            GIT_AUTHOR=mumu-140
+            SOURCE_URL=https://github.com/${{ github.repository }}
 
-      - name: Build and push (Debian)
-        uses: docker/build-push-action@v5
+      - name: 创建 GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
-          context: .
-          file: ./scripts/dockerfiles/Dockerfile.debian
-          push: true
-          platforms: linux/amd64,linux/i386,linux/arm64,linux/arm/v7
-          tags: ${{ steps.meta-debian.outputs.tags }}
-          labels: ${{ steps.meta-debian.outputs.labels }}
-          build-args: |
-            TARGETPLATFORM
+          tag_name: ${{ steps.metadata.outputs.version }}
+          files: build/archives/*
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+          prerelease: false

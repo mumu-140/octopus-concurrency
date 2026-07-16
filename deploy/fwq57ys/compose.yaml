@@ -1,0 +1,14 @@
+name: octopus
+
+services:
+  octopus:
+    image: mumu-140/octopus-concurrency:v0.10.1-mumu.1
+    pull_policy: never
+    container_name: octopus
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - /home/yangs/API/octopus/data:/app/data
+    environment:
+      OCTOPUS_SERVER_HOST: 0.0.0.0
+      OCTOPUS_SERVER_PORT: "35276"

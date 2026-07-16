@@ -1,0 +1,75 @@
+# syntax=docker/dockerfile:1@sha256:87999aa3d42bdc6bea60565083ee17e86d1f3339802f543c0d03998580f9cb89
+
+FROM docker.1ms.run/library/node@sha256:6c74791e557ce11fc957704f6d4fe134a7bc8d6f5ca4403205b2966bd488f6b3 AS frontend-builder
+
+ARG GIT_VERSION
+WORKDIR /build
+
+RUN test -n "$GIT_VERSION"
+RUN npm install --global pnpm@11.13.1
+
+COPY web/package.json web/pnpm-lock.yaml ./web/
+RUN cd web && pnpm install --frozen-lockfile
+
+COPY web ./web
+RUN cd web && NEXT_PUBLIC_APP_VERSION="$GIT_VERSION" pnpm run build
+
+FROM golang@sha256:6d06ba5646119bd0717466a70e6618ee6e4888e111be94d22e25ee57d8a6251f AS backend-builder
+
+ARG GIT_VERSION
+ARG COMMIT_ID
+ARG BUILD_TIME
+ARG GIT_AUTHOR=mumu-140
+
+WORKDIR /build
+RUN apk add --no-cache ca-certificates git
+
+COPY go.mod go.sum ./
+RUN GOPROXY=https://goproxy.cn,direct go mod download
+
+COPY . .
+RUN mkdir -p static
+COPY --from=frontend-builder /build/web/out ./static/out
+
+RUN test -n "$GIT_VERSION" \
+    && test -n "$COMMIT_ID" \
+    && test -n "$BUILD_TIME" \
+    && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+      go build -buildvcs=false -o octopus \
+      -ldflags="-X 'github.com/bestruirui/octopus/internal/conf.Version=$GIT_VERSION' \
+                -X 'github.com/bestruirui/octopus/internal/conf.BuildTime=$BUILD_TIME' \
+                -X 'github.com/bestruirui/octopus/internal/conf.Author=$GIT_AUTHOR' \
+                -X 'github.com/bestruirui/octopus/internal/conf.Commit=$COMMIT_ID' \
+                -s -w" \
+      -tags=jsoniter \
+      ./
+
+FROM hureru/octopus@sha256:35c6b36831db8680099bd1e1574f520e15173c3244b354d79f94bc9b1d4354c4
+
+ARG GIT_VERSION
+ARG COMMIT_ID
+ARG SOURCE_REVISION
+ARG SOURCE_TREE
+ARG BUILD_TIME
+ARG GIT_AUTHOR=mumu-140
+ARG SOURCE_URL=https://github.com/mumu-140/octopus-concurrency
+
+RUN test -n "$SOURCE_REVISION" \
+    && test -n "$SOURCE_TREE" \
+    && test -n "$BUILD_TIME"
+
+COPY --from=backend-builder /build/octopus /app/octopus
+RUN chmod +x /app/octopus
+
+LABEL org.opencontainers.image.title="octopus" \
+      org.opencontainers.image.description="Octopus 并发控制二开版本" \
+      org.opencontainers.image.version="$GIT_VERSION" \
+      org.opencontainers.image.revision="$SOURCE_REVISION" \
+      org.opencontainers.image.created="$BUILD_TIME" \
+      org.opencontainers.image.source="$SOURCE_URL" \
+      org.opencontainers.image.url="$SOURCE_URL" \
+      org.opencontainers.image.licenses="AGPL-3.0" \
+      org.opencontainers.image.base.name="hureru/octopus@sha256:35c6b36831db8680099bd1e1574f520e15173c3244b354d79f94bc9b1d4354c4" \
+      io.mumu.octopus.source-tree="$SOURCE_TREE" \
+      version="$GIT_VERSION" \
+      commit="$COMMIT_ID"
