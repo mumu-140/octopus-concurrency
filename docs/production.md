@@ -1,5 +1,21 @@
 # 生产运维规范
 
+## 治理入口
+
+仓库级强制规则见 `AGENTS.md`，完整开发、分支、发布和交接流程见
+`docs/development-governance.md`。机器可读运行基线位于
+`deploy/fwq57ys/production-state.json`。
+
+开始开发或审查时运行：
+
+    scripts/check-governance.sh --repo
+
+在 fwq57ys 执行任何获批生产操作前后运行：
+
+    scripts/check-governance.sh --live
+
+两种检查均为只读；`--live` 不会操作容器生命周期或写 SQLite。
+
 ## 真值来源
 
 fwq57ys 上唯一可编辑的二开源码仓库是
@@ -68,6 +84,11 @@ Docker 基础镜像、Dockerfile frontend 与 pnpm 均已固定。镜像构建�
 
 ## 分支
 
-main 是生产主线。fix/group-update-conflict 保留 v0.10.1-mumu.1 发布分支。
+main 是唯一集成主线，但不得直接在 main 开发。每个任务从最新 origin/main 创建
+短生命周期主题分支，经治理检查、测试、审查和 GitHub CI 后才可普通快进 main。
+fix/group-update-conflict 保留 v0.10.1-mumu.1 发布分支。
 codex/v0.10.1-image-api 包含尚未发布的协议路由工作；未完成独立审查和
 数据库迁移验证前，不得合并或部署。
+
+GitHub 私有仓库当前套餐不支持服务端 branch protection。服务器规范源码仓库必须运行
+`scripts/install-git-hooks.sh` 安装版本化 pre-push guard；任何新克隆也必须先安装。

@@ -2,19 +2,23 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> **强制入口**：开始工作前必须先读取根目录 `AGENTS.md`。目录、分支、tag、构建、
+> 生产数据和交接规则以 `AGENTS.md` 与 `docs/development-governance.md` 为准。
+> 本文件只说明代码结构，不授予生产部署或数据库写入权限。
+
 ## 开发命令
 
 ### 后端 (Go)
 ```bash
 go run main.go start                # 启动服务 (默认 0.0.0.0:8080)
 go run main.go start --config path  # 指定配置文件
-go test ./...                       # 运行所有测试
+go test -buildvcs=false ./...       # 运行所有测试
 ```
 
 ### 前端 (Next.js)
 ```bash
 cd web
-pnpm install                        # 安装依赖
+pnpm install --frozen-lockfile      # 按锁文件安装依赖
 pnpm dev                            # 开发服务器 (localhost:3000)
 NEXT_PUBLIC_API_BASE_URL="http://127.0.0.1:8080" pnpm dev  # 指定后端地址
 pnpm build                          # 生产构建 (输出到 web/out/)
@@ -23,9 +27,7 @@ pnpm lint                           # ESLint 检查
 
 ### 完整构建
 ```bash
-cd web && pnpm install && pnpm build && cd ..
-mv web/out static/
-go run main.go start
+./scripts/build.sh build linux x86_64
 ```
 
 ### 跨平台发布
@@ -36,8 +38,12 @@ go run main.go start
 
 ### Docker
 ```bash
-docker compose up -d
+docker compose --profile dev up -d octopus-dev  # 仅本地开发 profile
 ```
+
+生产只允许使用 `Dockerfile.build` 和 `scripts/build-production-image.sh`。未经明确维护窗口
+授权，不得执行生产 compose/container 生命周期命令。先运行
+`scripts/check-governance.sh --repo`；在 fwq57ys 核对真实服务时使用 `--live`。
 
 ## 架构概览
 
@@ -89,5 +95,6 @@ Octopus 是一个 **LLM API 聚合与负载均衡服务**。Go 后端 (Gin + GOR
 
 ## 贡献规范
 
+- 所有 Git 和生产规则以根 `AGENTS.md` 为准
 - 每个 PR 只包含一个变更主题（一个功能或一个 BUG 修复）
 - AI 辅助代码需完成人工审查后提交

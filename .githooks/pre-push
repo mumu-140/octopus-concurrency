@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+readonly ROOT_DIR="$(git rev-parse --show-toplevel)"
+readonly ZERO_SHA="0000000000000000000000000000000000000000"
+
+fail() {
+    printf 'pre-push rejected: %s\n' "$1" >&2
+    exit 1
+}
+
+is_read_only_branch() {
+    case "$1" in
+        refs/heads/fix/group-update-conflict | \
+        refs/heads/codex/production-normalization | \
+        refs/heads/backup/*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+"$ROOT_DIR/scripts/check-governance.sh" --repo
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+    [ -n "${local_ref:-}" ] || continue
+
+    if [[ "$remote_ref" == refs/tags/* ]]; then
+        [ "$local_sha" != "$ZERO_SHA" ] || fail "deleting tags is prohibited: $remote_ref"
+        [ "$local_ref" = "$remote_ref" ] \
+            || fail "tags must be pushed from the identically named local tag: $remote_ref"
+        if [ "$remote_sha" != "$ZERO_SHA" ] && [ "$local_sha" != "$remote_sha" ]; then
+            fail "moving an existing tag is prohibited: $remote_ref"
+        fi
+        if [ "$remote_sha" = "$ZERO_SHA" ]; then
+            [[ "$remote_ref" =~ ^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+-mumu\.[0-9]+$ ]] \
+                || fail "release tag format is invalid: $remote_ref"
+            [ "$(git cat-file -t "$local_sha")" = "tag" ] \
+                || fail "release tags must be annotated: $remote_ref"
+            tag_commit="$(git rev-parse "${local_sha}^{}")"
+            git merge-base --is-ancestor "$tag_commit" refs/heads/main \
+                || fail "release tag commit must be reachable from main: $remote_ref"
+        fi
+        continue
+    fi
+
+    if [[ "$remote_ref" == refs/heads/* ]]; then
+        is_read_only_branch "$remote_ref" \
+            && fail "historical evidence branch is read-only: $remote_ref"
+
+        if [ "$local_sha" = "$ZERO_SHA" ]; then
+            [ "$remote_ref" != "refs/heads/main" ] || fail "deleting main is prohibited"
+            continue
+        fi
+
+        [[ "$remote_ref" == "refs/heads/main" \
+            || "$remote_ref" =~ ^refs/heads/(codex|feat|fix|chore)/[A-Za-z0-9][A-Za-z0-9._/-]*$ ]] \
+            || fail "branch name is outside the allowed namespaces: $remote_ref"
+        [ "$local_ref" = "$remote_ref" ] \
+            || fail "branches must be pushed from the identically named local branch: $remote_ref"
+
+        if [ "$remote_sha" != "$ZERO_SHA" ]; then
+            git cat-file -e "${remote_sha}^{commit}" 2>/dev/null \
+                || fail "remote commit is unavailable locally; fetch before pushing $remote_ref"
+            git merge-base --is-ancestor "$remote_sha" "$local_sha" \
+                || fail "non-fast-forward branch update is prohibited: $remote_ref"
+        fi
+
+        if [ "$remote_ref" = "refs/heads/main" ]; then
+            [ "${OCTOPUS_MAIN_PROMOTION:-0}" = "1" ] \
+                || fail "main promotion requires reviewed CI evidence and OCTOPUS_MAIN_PROMOTION=1"
+        fi
+    fi
+done

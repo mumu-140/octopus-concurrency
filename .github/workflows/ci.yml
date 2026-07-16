@@ -7,11 +7,27 @@ on:
   push:
     branches:
       - main
+      - "codex/**"
+      - "feat/**"
+      - "fix/**"
+      - "chore/**"
 
 permissions:
   contents: read
 
 jobs:
+  governance:
+    name: governance
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Check repository governance
+        run: bash scripts/check-governance.sh --repo
+
   backend:
     name: backend
     runs-on: ubuntu-latest
