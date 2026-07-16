@@ -240,7 +240,13 @@ export function GroupCard({ group }: { group: Group }) {
                 model_name: m.name,
                 priority,
                 weight: m.weight ?? 1,
-            }));
+            }))
+            .filter((add) => {
+                // 过滤掉已存在于 group.items 的精确 (channel_id, model_name) 键
+                return !originalItems.some(
+                    (existing) => existing.channel_id === add.channel_id && existing.model_name === add.model_name
+                );
+            });
 
         const items_to_update = values.members
             .map((m, idx) => ({ m, priority: idx + 1 }))
