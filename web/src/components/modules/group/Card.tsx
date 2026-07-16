@@ -17,6 +17,7 @@ import { GroupHealthBadge } from './health';
 import { modelChannelKey, MODE_LABELS } from './utils';
 import { GroupMode, type GroupUpdateRequest } from '@/api/endpoints/group';
 import { PresetPopover } from './PresetPopover';
+import { ScopedPolicyDialog } from '@/components/modules/protocol-routing/ScopedPolicyDialog';
 import {
     MorphingDialog,
     MorphingDialogClose,
@@ -318,6 +319,8 @@ export function GroupCard({ group }: { group: Group }) {
                     </Tooltip>
 
                     <PresetPopover group={group} />
+
+                    {group.id ? <ScopedPolicyDialog kind="groups" id={group.id} name={group.name} /> : null}
 
                     <MorphingDialog>
                         <MorphingDialogTrigger className="p-1.5 rounded-lg transition-colors hover:bg-muted text-muted-foreground hover:text-foreground">
