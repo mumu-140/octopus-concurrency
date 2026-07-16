@@ -8,7 +8,7 @@ WORKDIR /build
 RUN test -n "$GIT_VERSION"
 RUN npm install --global pnpm@11.13.1
 
-COPY web/package.json web/pnpm-lock.yaml ./web/
+COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./web/
 RUN cd web && pnpm install --frozen-lockfile
 
 COPY web ./web

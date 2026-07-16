@@ -3,13 +3,6 @@
   "version": "0.10.1-mumu.1",
   "private": true,
   "packageManager": "pnpm@11.13.1",
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "@swc/core",
-      "sharp",
-      "unrs-resolver"
-    ]
-  },
   "scripts": {
     "dev": "next dev",
     "devs": "next dev --experimental-https --experimental-https-key /workplace/code/octopus/build/localhost-key.pem --experimental-https-cert /workplace/code/octopus/build/localhost.pem",
