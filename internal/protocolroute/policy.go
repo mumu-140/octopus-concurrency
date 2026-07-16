@@ -43,8 +43,9 @@ type ScopedRule struct {
 // PolicySnapshot 是一次请求解析用的不可变策略快照（设计 §6.5）。
 // 阶段 A 由调用方静态构造；阶段 B 起从 revision payload 反序列化。
 type PolicySnapshot struct {
-	ConfigRevision int64
-	Mode           RoutingMode
+	ConfigRevision    int64
+	Mode              RoutingMode
+	ConversionEnabled bool
 
 	// LearningReadEnabled=false 时 resolver 整体旁路证据/冷却/粘性（§6.4）。
 	// 阶段 A 固定 false。
@@ -161,7 +162,9 @@ func resolveManualRules(snap PolicySnapshot, channelID, channelKeyID int, upstre
 // EnabledProfiles 无该渠道条目时应用隐式默认 Profile：仅 channelType 本身可用。
 func profileEnabled(snap PolicySnapshot, channelID int, channelType, p protocol.Protocol) bool {
 	if profiles, ok := snap.EnabledProfiles[channelID]; ok {
-		return profiles[p]
+		if enabled, configured := profiles[p]; configured {
+			return enabled
+		}
 	}
 	return p == channelType
 }

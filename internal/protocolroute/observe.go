@@ -28,6 +28,12 @@ func ObserveShadowDecision(in ResolveInput) {
 	if !observeEnabled.Load() {
 		return
 	}
+	ObserveShadowDecisionNow(in)
+}
+
+// ObserveShadowDecisionNow records one request-scoped observe decision.
+// The caller has already resolved the effective per-group mode.
+func ObserveShadowDecisionNow(in ResolveInput) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Warnf("protocolroute observe: shadow resolve panic suppressed: %v", r)

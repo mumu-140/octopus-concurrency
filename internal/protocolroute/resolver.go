@@ -1,10 +1,18 @@
 package protocolroute
 
 import (
+	"encoding/json"
 	"sort"
 
 	"github.com/bestruirui/octopus/internal/protocol"
 )
+
+// AttemptConfig is the immutable endpoint/header/body configuration for one protocol.
+type AttemptConfig struct {
+	BaseURL       string
+	HeaderPolicy  HeaderPolicy
+	ParamOverride json.RawMessage
+}
 
 // Decision 是 resolvePrimary 的输出。
 type Decision struct {
@@ -34,8 +42,13 @@ type ResolveInput struct {
 	Ingress  protocol.Protocol
 	Features RequestFeatureFlags
 
-	BaseURL      string
-	HeaderPolicy HeaderPolicy
+	BaseURL       string
+	HeaderPolicy  HeaderPolicy
+	ParamOverride json.RawMessage
+
+	// AdaptiveProfiles contains protocol-specific attempt configuration. The
+	// selected protocol is the only entry copied into the resulting plan.
+	AdaptiveProfiles map[protocol.Protocol]AttemptConfig
 
 	// LegacyEligible 是调用方注入的现有 relay 兼容性判断结果（§6.4）：
 	// 请求 Handler/渠道类型匹配、passthroughRequired、Embedding 路径等。
@@ -78,6 +91,13 @@ func ResolvePrimary(in ResolveInput) Decision {
 
 	if rules.force != nil {
 		fp := rules.force.Protocols[0]
+		if fp != in.Ingress && !snap.ConversionEnabled {
+			return Decision{
+				Incompatible:       true,
+				IncompatibleScope:  rules.forceScope,
+				IncompatibleReason: "protocol conversion is disabled",
+			}
+		}
 		if _, ok := fp.ToOutboundType(); !ok {
 			return Decision{
 				Incompatible:       true,
@@ -146,6 +166,9 @@ func ResolvePrimary(in ResolveInput) Decision {
 		if !profileEnabled(snap, in.ChannelID, in.ChannelType, p) {
 			continue
 		}
+		if p != in.Ingress && !snap.ConversionEnabled {
+			continue
+		}
 		v := EvaluateConversion(in.Ingress, p, in.Features)
 		if v == VerdictForbidden || v == VerdictLegacyFixed {
 			continue
@@ -193,12 +216,14 @@ func newLegacyPlanFromInput(in ResolveInput) *AttemptPlan {
 		Features:         in.Features,
 		BaseURL:          in.BaseURL,
 		HeaderPolicy:     in.HeaderPolicy,
+		ParamOverride:    in.ParamOverride,
 		PolicySource:     "legacy_fixed",
 		ConfigRevision:   in.Snapshot.ConfigRevision,
 	})
 }
 
 func newAdaptivePlanFromInput(in ResolveInput, up protocol.Protocol, verdict ConversionVerdict, source string, score int) *AttemptPlan {
+	config := in.AdaptiveProfiles[up]
 	return NewAttemptPlan(PlanSpec{
 		ChannelID:        in.ChannelID,
 		ChannelKeyID:     in.ChannelKeyID,
@@ -208,8 +233,9 @@ func newAdaptivePlanFromInput(in ResolveInput, up protocol.Protocol, verdict Con
 		UpstreamProtocol: up,
 		ConversionMode:   ModeFor(in.Ingress, up, verdict),
 		Features:         in.Features,
-		BaseURL:          in.BaseURL,
-		HeaderPolicy:     in.HeaderPolicy,
+		BaseURL:          config.BaseURL,
+		HeaderPolicy:     config.HeaderPolicy,
+		ParamOverride:    config.ParamOverride,
 		PolicySource:     source,
 		PolicyPriority:   score,
 		ConfigRevision:   in.Snapshot.ConfigRevision,

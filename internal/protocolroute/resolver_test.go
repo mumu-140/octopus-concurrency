@@ -8,7 +8,11 @@ import (
 
 func adaptiveInput() ResolveInput {
 	return ResolveInput{
-		Snapshot:       LegacySnapshot(),
+		Snapshot: PolicySnapshot{
+			Mode:              RoutingAdaptive,
+			ConversionEnabled: true,
+			Group:             ScopedRule{Mode: ModeInherit},
+		},
 		ChannelID:      1,
 		ChannelKeyID:   10,
 		ChannelType:    protocol.OpenAIChat,
@@ -17,6 +21,19 @@ func adaptiveInput() ResolveInput {
 		Ingress:        protocol.OpenAIChat,
 		Features:       RequestFeatureFlags{PlainText: true},
 		LegacyEligible: true,
+	}
+}
+
+func TestResolveBlocksForcedCrossProtocolWhenConversionDisabled(t *testing.T) {
+	in := adaptiveInput()
+	in.Snapshot.ConversionEnabled = false
+	in.Snapshot.Group = ScopedRule{Mode: ModeForce, Protocols: []protocol.Protocol{protocol.Anthropic}}
+	in.Snapshot.EnabledProfiles = map[int]map[protocol.Protocol]bool{
+		1: {protocol.OpenAIChat: true, protocol.Anthropic: true},
+	}
+	d := ResolvePrimary(in)
+	if !d.Incompatible || d.IncompatibleReason != "protocol conversion is disabled" {
+		t.Fatalf("decision = %+v", d)
 	}
 }
 
@@ -58,6 +75,64 @@ func TestResolveIngressBeatsChannelTypeWhenProfileEnabled(t *testing.T) {
 	}
 }
 
+func TestResolveSelectedProtocolCarriesItsAttemptConfig(t *testing.T) {
+	in := adaptiveInput()
+	in.Ingress = protocol.OpenAIResponse
+	in.Snapshot.ConfigRevision = 9
+	in.Snapshot.EnabledProfiles = map[int]map[protocol.Protocol]bool{
+		1: {protocol.OpenAIChat: true, protocol.OpenAIResponse: true},
+	}
+	in.AdaptiveProfiles = map[protocol.Protocol]AttemptConfig{
+		protocol.OpenAIChat: {
+			BaseURL:       "https://chat.example.test",
+			HeaderPolicy:  HeaderPolicy{Set: map[string]string{"X-Route": "chat"}},
+			ParamOverride: []byte(`{"temperature":0.1}`),
+		},
+		protocol.OpenAIResponse: {
+			BaseURL:       "https://responses.example.test",
+			HeaderPolicy:  HeaderPolicy{Set: map[string]string{"X-Route": "responses"}},
+			ParamOverride: []byte(`{"store":false}`),
+		},
+	}
+
+	d := ResolvePrimary(in)
+	if d.Incompatible {
+		t.Fatalf("unexpected incompatible: %+v", d)
+	}
+	if got := d.Plan.BaseURL(); got != "https://responses.example.test" {
+		t.Fatalf("base URL = %q", got)
+	}
+	if got := d.Plan.HeaderPolicy().Set["X-Route"]; got != "responses" {
+		t.Fatalf("header route = %q", got)
+	}
+	if got := string(d.Plan.ParamOverride()); got != `{"store":false}` {
+		t.Fatalf("param override = %s", got)
+	}
+	if got := d.Plan.ConfigRevision(); got != 9 {
+		t.Fatalf("config revision = %d", got)
+	}
+}
+
+func TestResolveLegacyCarriesChannelParamOverride(t *testing.T) {
+	in := adaptiveInput()
+	in.ChannelType = protocol.Gemini
+	in.Ingress = protocol.OpenAIChat
+	in.BaseURL = "https://legacy.example.test"
+	in.HeaderPolicy = HeaderPolicy{Set: map[string]string{"X-Legacy": "1"}}
+	in.ParamOverride = []byte(`{"legacy":true}`)
+
+	d := ResolvePrimary(in)
+	if d.Incompatible {
+		t.Fatalf("unexpected incompatible: %+v", d)
+	}
+	if !d.Plan.IsLegacyFixed() {
+		t.Fatal("non-adaptive channel must use legacy fixed plan")
+	}
+	if got := string(d.Plan.ParamOverride()); got != `{"legacy":true}` {
+		t.Fatalf("param override = %s", got)
+	}
+}
+
 func TestResolveImplicitDefaultProfileRestrictsToChannelType(t *testing.T) {
 	in := adaptiveInput()
 	in.Ingress = protocol.OpenAIResponse
@@ -71,6 +146,21 @@ func TestResolveImplicitDefaultProfileRestrictsToChannelType(t *testing.T) {
 	}
 	if got := d.Plan.ConversionMode(); got != ModeTranslated {
 		t.Fatalf("mode = %q, want translated", got)
+	}
+}
+
+func TestResolveImplicitChannelTypeRemainsAvailableBesideExplicitProfiles(t *testing.T) {
+	in := adaptiveInput()
+	in.Ingress = protocol.Anthropic
+	in.Snapshot.EnabledProfiles = map[int]map[protocol.Protocol]bool{
+		1: {protocol.OpenAIResponse: true},
+	}
+	d := ResolvePrimary(in)
+	if d.Incompatible {
+		t.Fatalf("unexpected incompatible: %+v", d)
+	}
+	if got := d.Plan.UpstreamProtocol(); got != protocol.OpenAIChat {
+		t.Fatalf("upstream = %q, want implicit channel type", got)
 	}
 }
 

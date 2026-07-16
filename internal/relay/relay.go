@@ -16,6 +16,8 @@ import (
 	dbmodel "github.com/bestruirui/octopus/internal/model"
 	"github.com/bestruirui/octopus/internal/op"
 	"github.com/bestruirui/octopus/internal/outlierwindow"
+	"github.com/bestruirui/octopus/internal/protocol"
+	"github.com/bestruirui/octopus/internal/protocolroute"
 	"github.com/bestruirui/octopus/internal/relay/balancer"
 	"github.com/bestruirui/octopus/internal/relay/stream"
 	"github.com/bestruirui/octopus/internal/server/resp"
@@ -82,6 +84,8 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 		resp.ErrorWithCode(c, http.StatusNotFound, CodeRelayModelNotFound, "model not found")
 		return
 	}
+	policyState, _ := op.ProtocolPolicyRuntimeSnapshot()
+	policySnapshot, routingMode := buildProtocolPolicySnapshot(policyState, group.ID)
 
 	// === HTTP Replay 机制 ===
 	// 当 HTTP 请求携带 previous_response_id 时，尝试从本地加载上一次成功的 replay 状态，
@@ -196,34 +200,27 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 			iter.Skip(channel.ID, 0, channel.Name, "channel disabled")
 			continue
 		}
-		if responsesPassthroughRequired {
-			if channel.Type == outbound.OutboundTypeOpenAIResponse {
-				responsesPassthroughCapableFound = true
-			} else {
-				iter.Skip(channel.ID, 0, channel.Name, "openai responses passthrough required")
-				continue
-			}
+		legacyEligible := outbound.Get(channel.Type) != nil
+		legacyReason := ""
+		if !legacyEligible {
+			legacyReason = fmt.Sprintf("unsupported channel type: %d", channel.Type)
 		}
-
-		// 出站适配器
-		outAdapter := outbound.Get(channel.Type)
-		if outAdapter == nil {
-			iter.Skip(channel.ID, 0, channel.Name, fmt.Sprintf("unsupported channel type: %d", channel.Type))
-			continue
+		if responsesPassthroughRequired && channel.Type != outbound.OutboundTypeOpenAIResponse {
+			legacyEligible = false
+			legacyReason = "openai responses passthrough required"
 		}
-
-		// 类型兼容性检查
 		if internalRequest.IsEmbeddingRequest() && !outbound.IsEmbeddingChannelType(channel.Type) {
-			iter.Skip(channel.ID, 0, channel.Name, "channel type not compatible with embedding request")
-			continue
+			legacyEligible = false
+			legacyReason = "channel type not compatible with embedding request"
 		}
 		if internalRequest.IsChatRequest() && !outbound.IsChatChannelType(channel.Type) {
-			iter.Skip(channel.ID, 0, channel.Name, "channel type not compatible with chat request")
+			legacyEligible = false
+			legacyReason = "channel type not compatible with chat request"
+		}
+		if routingMode != protocolroute.RoutingAdaptive && !legacyEligible {
+			iter.Skip(channel.ID, 0, channel.Name, legacyReason)
 			continue
 		}
-
-		// 设置实际模型
-		internalRequest.Model = item.ModelName
 
 		log.Debugf("request model %s, mode: %d, forwarding to channel: %s model: %s (attempt %d/%d, sticky=%t)",
 			requestModel, group.Mode, channel.Name, item.ModelName,
@@ -234,13 +231,37 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 			PreferredKeyID: iter.StickyKeyID(),
 		}
 		var usedKey dbmodel.ChannelKey
+		var attemptPlan *protocolroute.AttemptPlan
+		channelPolicy := protocolPolicyForChannel(policyState, channel.ID)
+		legacyConfig, adaptiveProfiles := buildAttemptConfigs(channel, channelPolicy)
 		for {
 			usedKey = channel.GetChannelKey(selectOpts)
 			if usedKey.ChannelKey == "" {
 				break
 			}
 			if !iter.SkipCircuitBreak(channel.ID, usedKey.ID, channel.Name) {
-				break
+				decision := resolveRelayAttemptPlan(relayPlanInput{
+					Snapshot:       policySnapshot,
+					Mode:           routingMode,
+					ChannelID:      channel.ID,
+					ChannelKeyID:   usedKey.ID,
+					ChannelType:    channel.Type,
+					RequestedModel: requestModel,
+					UpstreamModel:  item.ModelName,
+					Request:        internalRequest,
+					LegacyConfig:   legacyConfig,
+					Profiles:       adaptiveProfiles,
+					LegacyEligible: legacyEligible,
+				})
+				if !decision.Incompatible && decision.Plan != nil {
+					attemptPlan = decision.Plan
+					if !responsesPassthroughRequired || attemptPlan.UpstreamProtocol() == protocol.OpenAIResponse {
+						break
+					}
+				}
+				selectOpts.ExcludeKeyIDs[usedKey.ID] = struct{}{}
+				usedKey = dbmodel.ChannelKey{}
+				continue
 			}
 			selectOpts.ExcludeKeyIDs[usedKey.ID] = struct{}{}
 			usedKey = dbmodel.ChannelKey{}
@@ -251,10 +272,9 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 			}
 			continue
 		}
-
-		// T08 observe：影子协议决策（默认关闭；只记录不改变行为）
-		observeProtocolDecision(channel.Type, channel.ID, usedKey.ID,
-			requestModel, item.ModelName, internalRequest, true)
+		if attemptPlan.UpstreamProtocol() == protocol.OpenAIResponse {
+			responsesPassthroughCapableFound = true
+		}
 
 		if !balancer.TryAcquireChannel(channel.ID, channel.MaxConcurrency) {
 			capacitySkipped = true
@@ -286,18 +306,11 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 						return attemptResult{Canceled: true, Err: context.Canceled}
 					case <-time.After(delay):
 					}
-
-					// 重建 outAdapter 以重置流式状态（toolIndex, toolCalls 等）
-					outAdapter = outbound.Get(channel.Type)
 				}
 
-				// 构造尝试级上下文
-				ra := &relayAttempt{
-					relayRequest:         req,
-					outAdapter:           outAdapter,
-					channel:              channel,
-					usedKey:              usedKey,
-					firstTokenTimeOutSec: group.FirstTokenTimeOut,
+				ra, attemptErr := newRelayAttempt(req, channel, usedKey, attemptPlan, group.FirstTokenTimeOut)
+				if attemptErr != nil {
+					return attemptResult{Err: attemptErr, StatusCode: http.StatusInternalServerError}
 				}
 
 				result = ra.attempt()
@@ -311,10 +324,10 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 		// 同通道重试耗尽后记录熔断器失败
 		if !result.Success && !result.Written && !result.Canceled && !result.ResetConversation {
 			failureKind := circuitFailureKind(group.RetryEnabled, result.StatusCode)
-			balancer.RecordFailure(channel.ID, usedKey.ID, internalRequest.Model, failureKind)
+			balancer.RecordFailure(channel.ID, usedKey.ID, attemptPlan.UpstreamModel(), failureKind)
 			outlierwindow.Report(channel.ID, false, result.StatusCode, time.Now())
 			if failureKind == balancer.FailureHard {
-				maybeLearnManagedRoute(c.Request.Context(), channel.ID, internalRequest.Model, inboundType, result.Err)
+				maybeLearnManagedRoute(c.Request.Context(), channel.ID, attemptPlan.UpstreamModel(), inboundType, result.Err)
 			}
 		}
 
@@ -538,7 +551,8 @@ func (ra *relayAttempt) forward() (int, error) {
 	ctx := ra.requestContext()
 
 	// 尝试上游 WebSocket（仅 OpenAI Response outbound 类型；必须是客户端 WS 入站且新开关显式启用）
-	if ra.channel.Type == outbound.OutboundTypeOpenAIResponse &&
+	if ra.effectiveUpstreamProtocol() == protocol.OpenAIResponse &&
+		(ra.plan == nil || ra.plan.IsLegacyFixed()) &&
 		ra.internalRequest.RawAPIFormat == model.APIFormatOpenAIResponse {
 
 		shouldTryWS := false
@@ -582,7 +596,7 @@ func (ra *relayAttempt) forwardViaWS(ctx context.Context) (int, error) {
 	if continuation {
 		preferredConnID, _ = getWSResponseConn(currentPreviousResponseID(ra.internalRequest))
 	}
-	pc := TryUpstreamWSWithPreference(ctx, ra.channel, ra.channel.GetBaseUrl(), ra.usedKey.ChannelKey, ra.usedKey.ID, ra.clientRequestHeaders(), preferredConnID)
+	pc := TryUpstreamWSWithPreference(ctx, ra.channel, ra.effectiveBaseURL(), ra.usedKey.ChannelKey, ra.usedKey.ID, ra.clientRequestHeaders(), preferredConnID)
 	if pc == nil {
 		log.Debugf("upstream WS unavailable for channel %s (key=%d, continuation=%t)", ra.channel.Name, ra.usedKey.ID, continuation)
 		return -1, nil // WS not available
@@ -662,7 +676,7 @@ func (ra *relayAttempt) forwardViaWS(ctx context.Context) (int, error) {
 func (ra *relayAttempt) retryViaFreshUpstreamWS(ctx context.Context, reqBody []byte) (int, error, bool) {
 	log.Debugf("attempting fresh upstream WS redial (channel=%s, key=%d, previous_response_id=%s)",
 		ra.channel.Name, ra.usedKey.ID, currentPreviousResponseID(ra.internalRequest))
-	redialed := TryUpstreamWS(ctx, ra.channel, ra.channel.GetBaseUrl(), ra.usedKey.ChannelKey, ra.usedKey.ID, ra.clientRequestHeaders(), true)
+	redialed := TryUpstreamWS(ctx, ra.channel, ra.effectiveBaseURL(), ra.usedKey.ChannelKey, ra.usedKey.ID, ra.clientRequestHeaders(), true)
 	if redialed == nil {
 		log.Debugf("fresh upstream WS redial unavailable (channel=%s, key=%d)", ra.channel.Name, ra.usedKey.ID)
 		return 0, nil, false
@@ -810,7 +824,7 @@ func (ra *relayAttempt) forwardViaHTTPPassthrough(ctx context.Context, pt model.
 		ctx,
 		ra.rawBody,
 		ra.internalRequest.Model,
-		ra.channel.GetBaseUrl(),
+		ra.effectiveBaseURL(),
 		ra.usedKey.ChannelKey,
 		ra.internalRequest.Query,
 	)
@@ -826,7 +840,7 @@ func (ra *relayAttempt) forwardViaHTTPPassthrough(ctx context.Context, pt model.
 
 	// Copy headers
 	ra.copyHeaders(outboundRequest)
-	if ra.channel.Type == outbound.OutboundTypeOpenAIResponse {
+	if ra.effectiveUpstreamProtocol() == protocol.OpenAIResponse {
 		outboundRequest.Header.Set("Content-Type", "application/json")
 	}
 
@@ -894,7 +908,7 @@ func (ra *relayAttempt) forwardViaHTTPStandard(ctx context.Context) (int, error)
 	outboundRequest, err := ra.outAdapter.TransformRequest(
 		ctx,
 		ra.internalRequest,
-		ra.channel.GetBaseUrl(),
+		ra.effectiveBaseURL(),
 		ra.usedKey.ChannelKey,
 	)
 	if err != nil {
@@ -907,7 +921,7 @@ func (ra *relayAttempt) forwardViaHTTPStandard(ctx context.Context) (int, error)
 
 	// 复制请求头
 	ra.copyHeaders(outboundRequest)
-	if ra.channel.Type == outbound.OutboundTypeOpenAIResponse {
+	if ra.effectiveUpstreamProtocol() == protocol.OpenAIResponse {
 		outboundRequest.Header.Set("Content-Type", "application/json")
 	}
 
@@ -982,7 +996,7 @@ func (ra *relayAttempt) getStreamWriter() StreamWriter {
 
 // applyParamOverride merges channel-level JSON request overrides and records the final upstream payload.
 func (ra *relayAttempt) applyParamOverride(outboundRequest *http.Request) error {
-	if err := helper.ApplyParamOverride(outboundRequest, ra.channel.ParamOverride); err != nil {
+	if err := helper.ApplyParamOverride(outboundRequest, ra.effectiveParamOverride()); err != nil {
 		return err
 	}
 	if requestBody, readErr := readOutboundRequestBody(outboundRequest); readErr == nil {
@@ -993,10 +1007,14 @@ func (ra *relayAttempt) applyParamOverride(outboundRequest *http.Request) error 
 
 // copyHeaders 复制请求头，过滤 hop-by-hop 头
 func (ra *relayAttempt) copyHeaders(outboundRequest *http.Request) {
+	var adapterCredentials http.Header
+	if ra.adaptiveHeaderIsolationEnabled() {
+		adapterCredentials = captureAdapterCredentials(outboundRequest.Header)
+	}
 	if ra.c != nil {
 		for key, values := range ra.c.Request.Header {
 			lowerKey := strings.ToLower(key)
-			if hopByHopHeaders[lowerKey] {
+			if hopByHopHeaders[lowerKey] || !ra.allowClientHeader(lowerKey) {
 				continue
 			}
 			// anthropic-beta 需要与出站默认值合并去重，避免覆盖掉
@@ -1019,10 +1037,11 @@ func (ra *relayAttempt) copyHeaders(outboundRequest *http.Request) {
 	if outboundRequest.Header.Get("User-Agent") == "" {
 		outboundRequest.Header.Set("User-Agent", "")
 	}
-	if len(ra.channel.CustomHeader) > 0 {
-		for _, header := range ra.channel.CustomHeader {
-			outboundRequest.Header.Set(header.HeaderKey, header.HeaderValue)
-		}
+	for key, value := range ra.effectiveHeaders() {
+		outboundRequest.Header.Set(key, value)
+	}
+	if ra.adaptiveHeaderIsolationEnabled() {
+		restoreAdapterCredentials(outboundRequest.Header, adapterCredentials)
 	}
 }
 

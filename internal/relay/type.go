@@ -12,6 +12,8 @@ import (
 
 	"github.com/bestruirui/octopus/internal/conf"
 	dbmodel "github.com/bestruirui/octopus/internal/model"
+	"github.com/bestruirui/octopus/internal/protocol"
+	"github.com/bestruirui/octopus/internal/protocolroute"
 	"github.com/bestruirui/octopus/internal/relay/balancer"
 	"github.com/bestruirui/octopus/internal/transformer/model"
 	"github.com/gin-gonic/gin"
@@ -124,6 +126,8 @@ type relayAttempt struct {
 	outAdapter           model.Outbound
 	channel              *dbmodel.Channel
 	usedKey              dbmodel.ChannelKey
+	plan                 *protocolroute.AttemptPlan
+	upstreamProtocol     protocol.Protocol
 	firstTokenTimeOutSec int
 	firstTokenBudget     *firstTokenBudget
 	retryAfter           time.Duration // forward() 提取后暂存

@@ -11,7 +11,6 @@ import (
 
 	"github.com/bestruirui/octopus/internal/db"
 	"github.com/bestruirui/octopus/internal/model"
-	"github.com/bestruirui/octopus/internal/protocolroute"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -46,7 +45,6 @@ func ProtocolRoutingConfigUpdate(req *model.ProtocolRoutingConfigUpdateRequest, 
 	if err != nil {
 		return nil, err
 	}
-	protocolroute.SetObserveEnabled(state.Config.ProtocolRoutingEnabled && state.Config.Mode == model.ProtocolRoutingModeObserve)
 	return state, nil
 }
 
@@ -113,7 +111,12 @@ func commitProtocolPolicyMutation(ctx context.Context, expectedRevision int64, a
 	if err := tx.Commit().Error; err != nil {
 		return nil, protocolRoutingDatabaseError("commit protocol policy transaction", err)
 	}
-	return ProtocolPolicyGet(ctx)
+	state, err := ProtocolPolicyGet(ctx)
+	if err != nil {
+		return nil, err
+	}
+	protocolPolicyRuntimeStore(state)
+	return state, nil
 }
 
 func applyProtocolConfigPatch(cfg *model.ProtocolRoutingConfig, req *model.ProtocolRoutingConfigUpdateRequest) {
