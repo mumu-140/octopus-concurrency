@@ -23,52 +23,24 @@ func (ra *relayAttempt) forwardViaWS(ctx context.Context) (int, error) {
 		return ra.forwardViaWSPassthrough(ctx)
 	}
 	continuation := requiresUpstreamWSContinuation(ra.internalRequest)
-	preferredConnID := ""
-	if continuation {
-		preferredConnID, _ = getWSResponseConn(currentPreviousResponseID(ra.internalRequest))
-	}
-	pc := TryUpstreamWSWithPreference(ctx, ra.channel, ra.effectiveBaseURL(), ra.usedKey.ChannelKey, ra.usedKey.ID, ra.clientRequestHeaders(), preferredConnID)
+	pc := ra.openTransformWS(ctx, continuation)
 	if pc == nil {
 		log.Debugf("upstream WS unavailable for channel %s (key=%d, continuation=%t)", ra.channel.Name, ra.usedKey.ID, continuation)
-		return -1, nil // WS not available
+		return -1, nil
 	}
-
 	log.Debugf("using upstream WebSocket for channel %s (key=%d)", ra.channel.Name, ra.usedKey.ID)
 	log.Debugf("upstream WS selected (channel=%s, key=%d, continuation=%t, previous_response_id=%s)",
 		ra.channel.Name, ra.usedKey.ID, continuation, currentPreviousResponseID(ra.internalRequest))
-
-	// Build the Responses API request body
 	responsesReq := openaiOutbound.ConvertToResponsesRequest(ra.internalRequest)
 	reqBody, err := json.Marshal(responsesReq)
 	if err != nil {
 		wsUpstreamPool.Put(pc)
-		return -1, nil // fall through to HTTP
+		return -1, nil
 	}
 	ra.metrics.SetTransportRequestPayload(reqBody, ra.internalRequest.Model)
-
-	// Send response.create message
 	if err := wsUpstreamPool.SendResponseCreate(ctx, pc, reqBody); err != nil {
-		log.Warnf("upstream WS send failed for channel %s: %v", ra.channel.Name, err)
-		log.Debugf("upstream WS send failed before stream start (channel=%s, key=%d, continuation=%t, err=%v)",
-			ra.channel.Name, ra.usedKey.ID, continuation, err)
-		wsUpstreamPool.RemoveConn(pc)
-		if isUpstreamWSConnectionBroken(err) {
-			log.Debugf("upstream WS send failure eligible for redial (channel=%s, key=%d, continuation=%t)",
-				ra.channel.Name, ra.usedKey.ID, continuation)
-			statusCode, redialErr, recovered := ra.retryViaFreshUpstreamWS(ctx, reqBody)
-			if recovered || redialErr != nil {
-				return statusCode, redialErr
-			}
-			if requiresUpstreamWSContinuation(ra.internalRequest) {
-				balancer.DeleteSticky(ra.apiKeyID, ra.requestModel)
-				return http.StatusConflict, fmt.Errorf("upstream continuation transport unavailable; please restart the conversation")
-			}
-		}
-		wsUpstreamPool.RecordWSFailure(ra.channel.ID)
-		return -1, nil // fall through to HTTP
+		return ra.handleWSSendFailure(ctx, pc, reqBody, continuation, err)
 	}
-
-	// Read events from WS and process through the transform pipeline
 	ra.metrics.UsedWS = true
 	ra.metrics.SetWSExecMode(dbmodel.RelayLogWSExecModeTransform)
 	if ra.metrics.WSMode == nil {
@@ -77,31 +49,64 @@ func (ra *relayAttempt) forwardViaWS(ctx context.Context) (int, error) {
 	reader := newWSUpstreamReader(pc, ra.channel.ID, ra.usedKey.ID)
 	err = ra.handleWSStreamResponseV2(ctx, reader)
 	if err != nil {
-		reader.CloseWithError()
-		log.Debugf("upstream WS stream failed (channel=%s, key=%d, continuation=%t, written=%t, status=%d, err=%v)",
-			ra.channel.Name, ra.usedKey.ID, continuation, ra.getStreamWriter().Written(), reader.StatusCode(), err)
-		if requiresUpstreamWSContinuation(ra.internalRequest) && !ra.streamPayloadWritten.Load() && shouldReconnectUpstreamWSBeforeReplay(err) {
-			log.Debugf("upstream WS stream failure eligible for reconnect before replay (channel=%s, key=%d, previous_response_id=%s)",
-				ra.channel.Name, ra.usedKey.ID, currentPreviousResponseID(ra.internalRequest))
-			statusCode, redialErr, recovered := ra.retryViaFreshUpstreamWS(ctx, reqBody)
-			if recovered || redialErr != nil {
-				return statusCode, redialErr
-			}
-		}
-		if requiresUpstreamWSContinuation(ra.internalRequest) && isContinuationTransportFailure(err) {
-			balancer.DeleteSticky(ra.apiKeyID, ra.requestModel)
-			return http.StatusConflict, fmt.Errorf("upstream continuation transport unavailable; please restart the conversation")
-		}
-		if ra.requestContext().Err() == nil {
-			wsUpstreamPool.RecordWSFailure(ra.channel.ID)
-		}
-		return reader.StatusCode(), err
+		return ra.handleWSStreamFailure(ctx, reader, reqBody, continuation, err)
 	}
-
 	reader.Close()
 	wsUpstreamPool.RecordWSSuccess(ra.channel.ID)
 	ra.recordSuccessfulWSAffinity(pc)
 	return 200, nil
+}
+
+func (ra *relayAttempt) openTransformWS(ctx context.Context, continuation bool) *pooledConn {
+	preferredConnID := ""
+	if continuation {
+		preferredConnID, _ = getWSResponseConn(currentPreviousResponseID(ra.internalRequest))
+	}
+	return TryUpstreamWSWithPreference(ctx, ra.channel, ra.effectiveBaseURL(), ra.usedKey.ChannelKey,
+		ra.usedKey.ID, ra.clientRequestHeaders(), preferredConnID)
+}
+
+func (ra *relayAttempt) handleWSSendFailure(ctx context.Context, pc *pooledConn, reqBody []byte, continuation bool, sendErr error) (int, error) {
+	log.Warnf("upstream WS send failed for channel %s: %v", ra.channel.Name, sendErr)
+	log.Debugf("upstream WS send failed before stream start (channel=%s, key=%d, continuation=%t, err=%v)",
+		ra.channel.Name, ra.usedKey.ID, continuation, sendErr)
+	wsUpstreamPool.RemoveConn(pc)
+	if isUpstreamWSConnectionBroken(sendErr) {
+		log.Debugf("upstream WS send failure eligible for redial (channel=%s, key=%d, continuation=%t)",
+			ra.channel.Name, ra.usedKey.ID, continuation)
+		statusCode, redialErr, recovered := ra.retryViaFreshUpstreamWS(ctx, reqBody)
+		if recovered || redialErr != nil {
+			return statusCode, redialErr
+		}
+		if continuation {
+			balancer.DeleteSticky(ra.apiKeyID, ra.requestModel)
+			return http.StatusConflict, fmt.Errorf("upstream continuation transport unavailable; please restart the conversation")
+		}
+	}
+	wsUpstreamPool.RecordWSFailure(ra.channel.ID)
+	return -1, nil
+}
+
+func (ra *relayAttempt) handleWSStreamFailure(ctx context.Context, reader *wsUpstreamReader, reqBody []byte, continuation bool, streamErr error) (int, error) {
+	reader.CloseWithError()
+	log.Debugf("upstream WS stream failed (channel=%s, key=%d, continuation=%t, written=%t, status=%d, err=%v)",
+		ra.channel.Name, ra.usedKey.ID, continuation, ra.getStreamWriter().Written(), reader.StatusCode(), streamErr)
+	if continuation && !ra.streamPayloadWritten.Load() && shouldReconnectUpstreamWSBeforeReplay(streamErr) {
+		log.Debugf("upstream WS stream failure eligible for reconnect before replay (channel=%s, key=%d, previous_response_id=%s)",
+			ra.channel.Name, ra.usedKey.ID, currentPreviousResponseID(ra.internalRequest))
+		statusCode, redialErr, recovered := ra.retryViaFreshUpstreamWS(ctx, reqBody)
+		if recovered || redialErr != nil {
+			return statusCode, redialErr
+		}
+	}
+	if continuation && isContinuationTransportFailure(streamErr) {
+		balancer.DeleteSticky(ra.apiKeyID, ra.requestModel)
+		return http.StatusConflict, fmt.Errorf("upstream continuation transport unavailable; please restart the conversation")
+	}
+	if ra.requestContext().Err() == nil {
+		wsUpstreamPool.RecordWSFailure(ra.channel.ID)
+	}
+	return reader.StatusCode(), streamErr
 }
 
 func (ra *relayAttempt) retryViaFreshUpstreamWS(ctx context.Context, reqBody []byte) (int, error, bool) {

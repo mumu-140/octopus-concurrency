@@ -19,34 +19,18 @@ import (
 // handleStreamResponseV2 uses StreamProcessor for unified stream handling.
 func (ra *relayAttempt) handleStreamResponseV2(ctx context.Context, response *http.Response) error {
 	defer ra.closeFirstTokenBudget()
-
-	// Content-Type validation
-	if ct := response.Header.Get("Content-Type"); ct != "" && !strings.Contains(strings.ToLower(ct), "text/event-stream") {
-		body, _ := io.ReadAll(io.LimitReader(response.Body, 16*1024))
-		return fmt.Errorf("upstream returned non-SSE content-type %q for stream request: %s", ct, string(body))
+	if err := validateSSEContentType(response); err != nil {
+		return err
 	}
-
-	// Hand off early heartbeat
 	ra.heartbeat.Hand()
-
-	// Build transform function
-	transform := func(ctx context.Context, data []byte) ([]byte, error) {
-		return ra.transformStreamData(ctx, string(data))
-	}
-
-	// Determine first token timeout
-	var firstTokenTimeout time.Duration
-	if ra.firstTokenTimeOutSec > 0 && ra.firstTokenBudget == nil {
-		firstTokenTimeout = time.Duration(ra.firstTokenTimeOutSec) * time.Second
-	}
-
-	// Create StreamProcessor
 	processor := stream.NewStreamProcessor(stream.StreamConfig{
-		Source:            stream.NewSSESource(response.Body, maxSSEEventSize),
-		Transform:         transform,
+		Source: stream.NewSSESource(response.Body, maxSSEEventSize),
+		Transform: func(ctx context.Context, data []byte) ([]byte, error) {
+			return ra.transformStreamData(ctx, string(data))
+		},
 		Writer:            ra.getStreamWriter(),
 		Context:           ctx,
-		FirstTokenTimeout: firstTokenTimeout,
+		FirstTokenTimeout: ra.streamFirstTokenTimeout(),
 		HeartbeatInterval: streamHeartbeatInterval(),
 		OnFirstToken: func() {
 			ra.metrics.SetFirstTokenTime(time.Now())
@@ -54,60 +38,29 @@ func (ra *relayAttempt) handleStreamResponseV2(ctx context.Context, response *ht
 		},
 	})
 
-	// Run processor
 	err := processor.Run()
-
-	// Track payload written for metrics collection
 	if processor.PayloadWritten() {
 		ra.streamPayloadWritten.Store(true)
 	}
-
-	// Handle first token timeout specifically
-	if err != nil && strings.Contains(err.Error(), "first token timeout") {
-		_ = response.Body.Close()
-		return ra.firstTokenTimeoutError()
-	}
-
-	// Check for context cancellation with first token timeout
-	if err != nil {
-		if timeoutErr := ra.firstTokenTimeoutIfNeeded(ctx, err); timeoutErr != nil {
-			return timeoutErr
-		}
-	}
-
-	return err
+	normalized, _ := ra.normalizeStreamError(ctx, response, err)
+	return normalized
 }
 
 // handleStreamResponsePassthroughV2 uses StreamProcessor for unified passthrough handling.
 // Works with any PassthroughCapable transformer (Anthropic, OpenAI Responses, etc.).
 func (ra *relayAttempt) handleStreamResponsePassthroughV2(ctx context.Context, response *http.Response, cfg model.PassthroughConfig) error {
 	defer ra.closeFirstTokenBudget()
-
-	// Content-Type validation
-	if ct := response.Header.Get("Content-Type"); ct != "" && !strings.Contains(strings.ToLower(ct), "text/event-stream") {
-		body, _ := io.ReadAll(io.LimitReader(response.Body, 16*1024))
-		return fmt.Errorf("upstream returned non-SSE content-type %q for stream request: %s", ct, string(body))
+	if err := validateSSEContentType(response); err != nil {
+		return err
 	}
-
-	// Hand off early heartbeat
 	ra.heartbeat.Hand()
-
-	// Determine first token timeout
-	var firstTokenTimeout time.Duration
-	if ra.firstTokenTimeOutSec > 0 && ra.firstTokenBudget == nil {
-		firstTokenTimeout = time.Duration(ra.firstTokenTimeOutSec) * time.Second
-	}
-
-	// Buffer for raw stream (for metrics collection)
 	var rawStreamBuf bytes.Buffer
-
-	// Create StreamProcessor
 	processor := stream.NewStreamProcessor(stream.StreamConfig{
 		Source:            stream.NewRawSource(response.Body, 32*1024),
 		Transform:         nil, // Passthrough: no transformation
 		Writer:            ra.getStreamWriter(),
 		Context:           ctx,
-		FirstTokenTimeout: firstTokenTimeout,
+		FirstTokenTimeout: ra.streamFirstTokenTimeout(),
 		HeartbeatInterval: streamHeartbeatInterval(),
 		BufferRawStream:   true,
 		TerminalEvents:    cfg.TerminalEvents,
@@ -135,36 +88,49 @@ func (ra *relayAttempt) handleStreamResponsePassthroughV2(ctx context.Context, r
 		},
 	})
 
-	// Run processor
 	err := processor.Run()
-
-	// Track payload written for metrics collection
 	if processor.PayloadWritten() {
 		ra.streamPayloadWritten.Store(true)
 	}
-
-	// Handle first token timeout specifically
-	if err != nil && strings.Contains(err.Error(), "first token timeout") {
-		_ = response.Body.Close()
-		return ra.firstTokenTimeoutError()
-	}
-
-	// Check for context cancellation with first token timeout
-	if err != nil {
-		if timeoutErr := ra.firstTokenTimeoutIfNeeded(ctx, err); timeoutErr != nil {
-			return timeoutErr
-		}
-	}
-
-	// On disconnect with partial data, still try to collect metrics
-	if err != nil && errors.Is(err, context.Canceled) && rawStreamBuf.Len() > 0 {
+	normalized, transformed := ra.normalizeStreamError(ctx, response, err)
+	if !transformed && err != nil && errors.Is(err, context.Canceled) && rawStreamBuf.Len() > 0 {
 		ra.collectPassthroughMetrics(context.Background(), rawStreamBuf.Bytes())
 		if cfg.CollectMetrics {
 			ra.collectResponse()
 		}
 	}
 
-	return err
+	return normalized
+}
+
+func validateSSEContentType(response *http.Response) error {
+	ct := response.Header.Get("Content-Type")
+	if ct == "" || strings.Contains(strings.ToLower(ct), "text/event-stream") {
+		return nil
+	}
+	body, _ := io.ReadAll(io.LimitReader(response.Body, 16*1024))
+	return fmt.Errorf("upstream returned non-SSE content-type %q for stream request: %s", ct, string(body))
+}
+
+func (ra *relayAttempt) streamFirstTokenTimeout() time.Duration {
+	if ra.firstTokenTimeOutSec <= 0 || ra.firstTokenBudget != nil {
+		return 0
+	}
+	return time.Duration(ra.firstTokenTimeOutSec) * time.Second
+}
+
+func (ra *relayAttempt) normalizeStreamError(ctx context.Context, response *http.Response, err error) (error, bool) {
+	if err == nil {
+		return nil, false
+	}
+	if strings.Contains(err.Error(), "first token timeout") {
+		_ = response.Body.Close()
+		return ra.firstTokenTimeoutError(), true
+	}
+	if timeoutErr := ra.firstTokenTimeoutIfNeeded(ctx, err); timeoutErr != nil {
+		return timeoutErr, true
+	}
+	return err, false
 }
 
 // collectPassthroughMetrics parses raw SSE stream for metrics aggregation without mutating response.
