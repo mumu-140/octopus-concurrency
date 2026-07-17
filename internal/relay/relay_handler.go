@@ -206,14 +206,13 @@ func (h *relayHandler) handleAttemptResult(channel *dbmodel.Channel, key dbmodel
 			maybeLearnManagedRoute(h.c.Request.Context(), channel.ID, plan.UpstreamModel(), h.inboundType, result.Err)
 		}
 	}
-	if result.Success {
+	switch classifyAttemptResult(result) {
+	case attemptActionSuccess:
 		return h.handleSuccessfulAttempt(channel, key, result)
-	}
-	if result.Canceled || result.Written {
+	case attemptActionCanceled:
 		h.metrics.SaveWithChannelStats(h.c.Request.Context(), false, result.Err, h.iterator.Attempts(), false)
 		return true
-	}
-	if result.ResetConversation {
+	case attemptActionResetConversation:
 		h.metrics.SaveWithChannelStats(h.c.Request.Context(), false, result.Err, h.iterator.Attempts(), false)
 		if publicErr, ok := classifyWSPublicError(result.Err, result.StatusCode); ok {
 			h.heartbeat.FlushOrError(h.c, publicErr.Status, publicErr.Message)
@@ -221,10 +220,39 @@ func (h *relayHandler) handleAttemptResult(channel *dbmodel.Channel, key dbmodel
 			h.heartbeat.FlushOrError(h.c, result.StatusCode, result.Err.Error())
 		}
 		return true
+	case attemptActionWritten:
+		h.metrics.SaveWithChannelStats(h.c.Request.Context(), false, result.Err, h.iterator.Attempts(), false)
+		return true
 	}
 	h.lastErr = result.Err
 	h.lastResult = result
 	return false
+}
+
+type attemptAction uint8
+
+const (
+	attemptActionContinue attemptAction = iota
+	attemptActionSuccess
+	attemptActionCanceled
+	attemptActionResetConversation
+	attemptActionWritten
+)
+
+func classifyAttemptResult(result attemptResult) attemptAction {
+	if result.Success {
+		return attemptActionSuccess
+	}
+	if result.Canceled {
+		return attemptActionCanceled
+	}
+	if result.ResetConversation {
+		return attemptActionResetConversation
+	}
+	if result.Written {
+		return attemptActionWritten
+	}
+	return attemptActionContinue
 }
 
 func (h *relayHandler) handleSuccessfulAttempt(channel *dbmodel.Channel, key dbmodel.ChannelKey, result attemptResult) bool {
