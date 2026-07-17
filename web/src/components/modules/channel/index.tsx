@@ -200,7 +200,7 @@ export function Channel() {
                                 items={visibleManualChannels}
                                 layout={layout}
                                 columns={manualColumnCompute}
-                                estimateItemHeight={216}
+                                estimateItemHeight={156}
                                 header={manualHeader}
                                 footer={manualFooter}
                                 getItemKey={(item) => `channel-${item.raw.id}`}

@@ -4,6 +4,7 @@ import { logger } from '@/lib/logger';
 import { formatCount, formatMoney, formatTime } from '@/lib/utils';
 import { StatsChannel, type StatsMetricsFormatted } from './stats';
 import type { ProxyMode } from './proxy-pool';
+import { useChannelSyncStore } from '@/stores/channel-sync';
 /**
  * 渠道类型枚举
  */
@@ -55,6 +56,47 @@ export type ManagedChannelSource = {
     site_user_group_id?: number | null;
     group_key: string;
 };
+
+export type ChannelSyncStatus = 'updated' | 'unchanged' | 'failed';
+
+export type ChannelSyncResult = {
+    channel_id: number;
+    channel_name: string;
+    status: ChannelSyncStatus;
+    added_models: string[];
+    removed_models: string[];
+    error?: string;
+};
+
+export type ChannelSyncReport = {
+    started_at: string;
+    completed_at: string;
+    checked: number;
+    updated: number;
+    unchanged: number;
+    failed: number;
+    results: ChannelSyncResult[];
+    error?: string;
+};
+
+export function channelProtocolLabel(type: ChannelType): string {
+    switch (type) {
+        case ChannelType.OpenAIChat:
+            return 'OpenAI Chat';
+        case ChannelType.OpenAIResponse:
+            return 'OpenAI Responses';
+        case ChannelType.Anthropic:
+            return 'Anthropic Messages';
+        case ChannelType.Gemini:
+            return 'Gemini GenerateContent';
+        case ChannelType.Volcengine:
+            return 'Volcengine Ark';
+        case ChannelType.OpenAIEmbedding:
+            return 'OpenAI Embeddings';
+        default:
+            return '未知协议';
+    }
+}
 
 /**
  * 渠道完整数据（与后端 model.Channel 对齐；数组字段在前端保证为 []）
@@ -417,11 +459,15 @@ export function useSyncChannel() {
     const queryClient = useQueryClient();
     return useMutation({
         mutationFn: async () => {
-            return apiClient.post<null>('/api/v1/channel/sync');
+            return apiClient.post<ChannelSyncReport>('/api/v1/channel/sync');
         },
-        onSuccess: () => {
-            logger.log('渠道同步成功');
+        onSuccess: (report) => {
+            logger.log('渠道同步完成:', report);
+            useChannelSyncStore.getState().setLastReport(report);
+            queryClient.invalidateQueries({ queryKey: ['channels', 'list'] });
             queryClient.invalidateQueries({ queryKey: ['channels', 'last-sync-time'] });
+            queryClient.invalidateQueries({ queryKey: ['models', 'channel'] });
+            queryClient.invalidateQueries({ queryKey: ['groups', 'list'] });
         },
         onError: (error) => {
             logger.error('渠道同步失败:', error);

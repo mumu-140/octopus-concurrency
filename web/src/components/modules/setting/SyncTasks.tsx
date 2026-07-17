@@ -105,7 +105,9 @@ export function SettingSyncTasks() {
                 runLabel={t('syncTasks.llmSync.button')}
                 pendingLabel={t('syncTasks.llmSync.pending')}
                 onRun={() => syncChannel.mutate(undefined, {
-                    onSuccess: () => toast.success(t('syncTasks.llmSync.success')),
+                    onSuccess: (report) => toast.success(t('syncTasks.llmSync.success'), {
+                        description: `检查 ${report.checked} 个渠道，更新 ${report.updated} 个，无变化 ${report.unchanged} 个，失败 ${report.failed} 个。`,
+                    }),
                     onError: () => toast.error(t('syncTasks.llmSync.failed')),
                 })}
             />

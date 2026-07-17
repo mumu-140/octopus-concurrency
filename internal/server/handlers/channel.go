@@ -208,8 +208,8 @@ func fetchModel(c *gin.Context) {
 }
 
 func syncChannel(c *gin.Context) {
-	task.SyncModelsTask()
-	resp.Success(c, nil)
+	report := task.SyncModelsTaskWithReport()
+	resp.Success(c, report)
 }
 
 func getLastSyncTime(c *gin.Context) {
