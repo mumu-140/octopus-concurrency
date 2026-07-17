@@ -115,6 +115,9 @@ func TestEarlyHeartbeat_DelayedFirstHeartbeat(t *testing.T) {
 	defer hb.Stop()
 
 	time.Sleep(1200 * time.Millisecond)
+	// Stop and join the writer before inspecting httptest.ResponseRecorder,
+	// which is not safe for concurrent reads and writes.
+	hb.Hand()
 	if !hb.HeaderWritten() {
 		t.Fatal("expected SSE header after delay")
 	}
