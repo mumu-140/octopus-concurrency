@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"slices"
-	"strings"
 	"time"
 
 	dbmodel "github.com/bestruirui/octopus/internal/model"
@@ -17,380 +15,226 @@ import (
 	"github.com/bestruirui/octopus/internal/server/resp"
 	"github.com/bestruirui/octopus/internal/transformer/inbound"
 	"github.com/bestruirui/octopus/internal/transformer/model"
-	"github.com/bestruirui/octopus/internal/transformer/outbound"
 	"github.com/bestruirui/octopus/internal/utils/log"
 	"github.com/gin-gonic/gin"
 )
 
 func Handler(inboundType inbound.InboundType, c *gin.Context) {
-	// 解析请求
-	rawBody, internalRequest, inAdapter, err := parseRequest(inboundType, c)
-	if err != nil {
+	handler, ok := newRelayHandler(inboundType, c)
+	if !ok {
 		return
 	}
-	supportedModels := c.GetString("supported_models")
-	if supportedModels != "" {
-		supportedModelsArray := strings.Split(supportedModels, ",")
-		if !slices.Contains(supportedModelsArray, internalRequest.Model) {
-			resp.ErrorWithCode(c, http.StatusBadRequest, CodeRelayModelNotSupported, "model not supported")
-			return
-		}
+	defer handler.heartbeat.Stop()
+	handler.run()
+}
+
+type relayHandler struct {
+	inboundType         inbound.InboundType
+	c                   *gin.Context
+	group               dbmodel.Group
+	policyState         *dbmodel.ProtocolPolicyState
+	policySnapshot      protocolroute.PolicySnapshot
+	routingMode         protocolroute.RoutingMode
+	replayState         *wsConversationState
+	iterator            *balancer.Iterator
+	heartbeat           *earlyHeartbeat
+	metrics             *RelayMetrics
+	request             *relayRequest
+	passthroughRequired bool
+	passthroughCapable  bool
+	lastErr             error
+	lastResult          attemptResult
+	capacitySkipped     bool
+	rateSkipped         bool
+	maxRetries          int
+}
+
+func newRelayHandler(inboundType inbound.InboundType, c *gin.Context) (*relayHandler, bool) {
+	rawBody, request, inAdapter, err := parseRequest(inboundType, c)
+	if err != nil || !validateSupportedModel(c, request.Model) {
+		return nil, false
 	}
-
-	requestModel := internalRequest.Model
-	apiKeyID := c.GetInt("api_key_id")
-
-	// 获取通道分组
-	group, err := op.GroupGetEnabledMap(requestModel, c.Request.Context())
+	group, err := op.GroupGetEnabledMap(request.Model, c.Request.Context())
 	if err != nil {
 		resp.ErrorWithCode(c, http.StatusNotFound, CodeRelayModelNotFound, "model not found")
-		return
+		return nil, false
 	}
 	policyState, _ := op.ProtocolPolicyRuntimeSnapshot()
 	policySnapshot, routingMode := buildProtocolPolicySnapshot(policyState, group.ID)
-
-	// === HTTP Replay 机制 ===
-	// 当 HTTP 请求携带 previous_response_id 时，尝试从本地加载上一次成功的 replay 状态，
-	// 优先路由到同一渠道/key，并将请求转为自包含形式（合并历史，移除 previous_response_id）。
-	var responsesReplayState *wsConversationState
-	if inboundType == inbound.InboundTypeOpenAIResponse && internalRequest.RawAPIFormat == model.APIFormatOpenAIResponse {
-		if prevID := internalRequest.OpenAIPreviousResponseID(); prevID != "" {
-			responsesReplayState = resolveResponsesReplayState(apiKeyID, group.ID, requestModel, internalRequest)
-			if responsesReplayState != nil {
-				log.Debugf("loaded HTTP replay state (apikey=%d, group=%d, model=%s, previous_response_id=%s, channel=%d, key=%d)",
-					apiKeyID, group.ID, requestModel, prevID, responsesReplayState.ChannelID, responsesReplayState.ChannelKeyID)
-				// 转换请求为自包含形式（移除 previous_response_id，合并历史）
-				// BuildReplayRequest 返回 nil 表示合并失败，应保留原始请求
-				if replayed := responsesReplayState.BuildReplayRequest(internalRequest); replayed != nil {
-					internalRequest = replayed
-					log.Debugf("HTTP replay request transformed (apikey=%d, removed previous_response_id, merged history)", apiKeyID)
-				} else {
-					log.Warnf("HTTP replay history merge failed (apikey=%d, group=%d, model=%s, previous_response_id=%s), keeping original request",
-						apiKeyID, group.ID, requestModel, prevID)
-					responsesReplayState = nil // 放弃 replay，使用原始请求
-				}
-			} else {
-				log.Debugf("no HTTP replay state found (apikey=%d, group=%d, model=%s, previous_response_id=%s)",
-					apiKeyID, group.ID, requestModel, prevID)
-			}
-		}
-	}
-
-	// 创建迭代器（策略排序 + 粘性优先）
-	// 如果有 replay state，注入为 sticky 偏好
-	var preferredSticky *balancer.SessionEntry
-	if responsesReplayState != nil {
-		preferredSticky = responsesReplayStateToSticky(responsesReplayState)
-		if preferredSticky != nil {
-			log.Debugf("HTTP replay sticky routing preference (channel=%d, key=%d)", preferredSticky.ChannelID, preferredSticky.ChannelKeyID)
-		}
-	}
-	iter := balancer.NewIteratorWithPreference(group, apiKeyID, requestModel, preferredSticky)
-	if iter.Len() == 0 {
+	request, replayState := prepareHTTPReplay(inboundType, c.GetInt("api_key_id"), group.ID, request.Model, request)
+	iterator := newRelayIterator(group, c.GetInt("api_key_id"), request.Model, replayState)
+	if iterator.Len() == 0 {
 		resp.ErrorWithCode(c, http.StatusServiceUnavailable, CodeRelayNoAvailableChannel, "no available channel")
-		return
+		return nil, false
 	}
+	return buildRelayHandler(inboundType, c, group, policyState, policySnapshot, routingMode,
+		rawBody, request, inAdapter, replayState, iterator), true
+}
 
-	// === 早期心跳 ===
-	// 在所有 forward / 重试 / 退避之前启动早期心跳协程，覆盖前置阶段（连接慢、failover、退避叠加）
-	// 期间向客户端发 SSE 注释字节，避免被 Cloudflare 在 120s 零字节阈值上判 524。
-	// 仅对流式请求生效；非流式无法发送 SSE 注释（破坏 application/json 协议），
-	// 不施加任何本地超时——上游慢响应应让其自然完成或由上游/CF 自身处理。
-	isStream := internalRequest.Stream != nil && *internalRequest.Stream
-	hb := startEarlyHeartbeat(c, isStream)
-	defer hb.Stop()
+func newRelayIterator(group dbmodel.Group, apiKeyID int, requestModel string, replayState *wsConversationState) *balancer.Iterator {
+	var sticky *balancer.SessionEntry
+	if replayState != nil {
+		sticky = responsesReplayStateToSticky(replayState)
+		if sticky != nil {
+			log.Debugf("HTTP replay sticky routing preference (channel=%d, key=%d)", sticky.ChannelID, sticky.ChannelKeyID)
+		}
+	}
+	return balancer.NewIteratorWithPreference(group, apiKeyID, requestModel, sticky)
+}
 
-	// 初始化 Metrics
-	metrics := NewRelayMetrics(apiKeyID, requestModel, rawBody, internalRequest)
-	// 如果触发了 HTTP replay，记录 ws_mode=replay 和 ws_recovery=replay
-	if responsesReplayState != nil {
+func buildRelayHandler(
+	inboundType inbound.InboundType,
+	c *gin.Context,
+	group dbmodel.Group,
+	policyState *dbmodel.ProtocolPolicyState,
+	policySnapshot protocolroute.PolicySnapshot,
+	routingMode protocolroute.RoutingMode,
+	rawBody []byte,
+	request *model.InternalLLMRequest,
+	inAdapter model.Inbound,
+	replayState *wsConversationState,
+	iterator *balancer.Iterator,
+) *relayHandler {
+	apiKeyID := c.GetInt("api_key_id")
+	heartbeat := startEarlyHeartbeat(c, request.Stream != nil && *request.Stream)
+	metrics := NewRelayMetrics(apiKeyID, request.Model, rawBody, request)
+	if replayState != nil {
 		metrics.SetWSMode(dbmodel.RelayLogWSModeReplay)
 		metrics.SetWSRecovery(dbmodel.RelayLogWSRecoveryReplay)
 	}
-	responsesPassthroughRequired := internalRequest.HasOpenAIResponsesPassthrough()
-	responsesPassthroughCapableFound := false
-
-	// 请求级上下文
-	req := &relayRequest{
-		c:               c,
-		inAdapter:       inAdapter,
-		internalRequest: internalRequest,
-		metrics:         metrics,
-		apiKeyID:        apiKeyID,
-		requestModel:    requestModel,
-		groupID:         group.ID,
-		groupSessionTTL: group.SessionKeepTime,
-		iter:            iter,
-		rawBody:         rawBody,
-		heartbeat:       hb,
+	requestContext := &relayRequest{
+		c: c, inAdapter: inAdapter, internalRequest: request, metrics: metrics,
+		apiKeyID: apiKeyID, requestModel: request.Model, groupID: group.ID,
+		groupSessionTTL: group.SessionKeepTime, iter: iterator, rawBody: rawBody, heartbeat: heartbeat,
 	}
-
-	var lastErr error
-	var lastResult attemptResult
-	capacitySkipped := false
-	rateSkipped := false
-
-	// 同通道重试次数：启用时使用配置值，否则 1 次（不重试）
-	maxSameChannelRetries := 1
-	if group.RetryEnabled {
-		maxSameChannelRetries = group.MaxRetries
-		if maxSameChannelRetries <= 0 {
-			maxSameChannelRetries = 3
-		}
+	return &relayHandler{
+		inboundType: inboundType, c: c, group: group, policyState: policyState,
+		policySnapshot: policySnapshot, routingMode: routingMode, replayState: replayState,
+		iterator: iterator, heartbeat: heartbeat, metrics: metrics, request: requestContext,
+		passthroughRequired: request.HasOpenAIResponsesPassthrough(),
+		maxRetries:          sameChannelRetryLimit(group.RetryEnabled, group.MaxRetries),
 	}
+}
 
-	for iter.Next() {
-		select {
-		case <-c.Request.Context().Done():
+func (h *relayHandler) run() {
+	for h.iterator.Next() {
+		if h.c.Request.Context().Err() != nil {
 			log.Debugf("request context canceled, stopping retry")
-			metrics.SaveWithChannelStats(c.Request.Context(), false, context.Canceled, iter.Attempts(), false)
-			return
-		default:
-		}
-
-		item := iter.Item()
-
-		// 获取通道
-		channel, err := op.ChannelGet(item.ChannelID, c.Request.Context())
-		if err != nil {
-			log.Warnf("failed to get channel %d: %v", item.ChannelID, err)
-			iter.Skip(item.ChannelID, 0, fmt.Sprintf("channel_%d", item.ChannelID), fmt.Sprintf("channel not found: %v", err))
-			lastErr = err
-			continue
-		}
-		if !channel.Enabled {
-			iter.Skip(channel.ID, 0, channel.Name, "channel disabled")
-			continue
-		}
-		legacyEligible := outbound.Get(channel.Type) != nil
-		legacyReason := ""
-		if !legacyEligible {
-			legacyReason = fmt.Sprintf("unsupported channel type: %d", channel.Type)
-		}
-		if responsesPassthroughRequired && channel.Type != outbound.OutboundTypeOpenAIResponse {
-			legacyEligible = false
-			legacyReason = "openai responses passthrough required"
-		}
-		if internalRequest.IsEmbeddingRequest() && !outbound.IsEmbeddingChannelType(channel.Type) {
-			legacyEligible = false
-			legacyReason = "channel type not compatible with embedding request"
-		}
-		if internalRequest.IsChatRequest() && !outbound.IsChatChannelType(channel.Type) {
-			legacyEligible = false
-			legacyReason = "channel type not compatible with chat request"
-		}
-		if routingMode != protocolroute.RoutingAdaptive && !legacyEligible {
-			iter.Skip(channel.ID, 0, channel.Name, legacyReason)
-			continue
-		}
-
-		log.Debugf("request model %s, mode: %d, forwarding to channel: %s model: %s (attempt %d/%d, sticky=%t)",
-			requestModel, group.Mode, channel.Name, item.ModelName,
-			iter.Index()+1, iter.Len(), iter.IsSticky())
-
-		selectOpts := dbmodel.ChannelKeySelectOptions{
-			ExcludeKeyIDs:  make(map[int]struct{}),
-			PreferredKeyID: iter.StickyKeyID(),
-		}
-		var usedKey dbmodel.ChannelKey
-		var attemptPlan *protocolroute.AttemptPlan
-		channelPolicy := protocolPolicyForChannel(policyState, channel.ID)
-		legacyConfig, adaptiveProfiles := buildAttemptConfigs(channel, channelPolicy)
-		for {
-			usedKey = channel.GetChannelKey(selectOpts)
-			if usedKey.ChannelKey == "" {
-				break
-			}
-			if !iter.SkipCircuitBreak(channel.ID, usedKey.ID, channel.Name) {
-				decision := resolveRelayAttemptPlan(relayPlanInput{
-					Snapshot:       policySnapshot,
-					Mode:           routingMode,
-					ChannelID:      channel.ID,
-					ChannelKeyID:   usedKey.ID,
-					ChannelType:    channel.Type,
-					RequestedModel: requestModel,
-					UpstreamModel:  item.ModelName,
-					Request:        internalRequest,
-					LegacyConfig:   legacyConfig,
-					Profiles:       adaptiveProfiles,
-					LegacyEligible: legacyEligible,
-				})
-				if !decision.Incompatible && decision.Plan != nil {
-					attemptPlan = decision.Plan
-					if !responsesPassthroughRequired || attemptPlan.UpstreamProtocol() == protocol.OpenAIResponse {
-						break
-					}
-				}
-				selectOpts.ExcludeKeyIDs[usedKey.ID] = struct{}{}
-				usedKey = dbmodel.ChannelKey{}
-				continue
-			}
-			selectOpts.ExcludeKeyIDs[usedKey.ID] = struct{}{}
-			usedKey = dbmodel.ChannelKey{}
-		}
-		if usedKey.ChannelKey == "" {
-			if len(selectOpts.ExcludeKeyIDs) == 0 {
-				iter.Skip(channel.ID, 0, channel.Name, "no available key")
-			}
-			continue
-		}
-		if attemptPlan.UpstreamProtocol() == protocol.OpenAIResponse {
-			responsesPassthroughCapableFound = true
-		}
-
-		if !balancer.TryAcquireChannel(channel.ID, channel.MaxConcurrency) {
-			capacitySkipped = true
-			iter.SkipCapacity(channel.ID, usedKey.ID, channel.Name,
-				fmt.Sprintf("channel at max concurrency (%d)", channel.MaxConcurrency))
-			continue
-		}
-		if !balancer.TryConsumeChannelRPM(channel.ID, channel.MaxRPM, time.Now()) {
-			balancer.ReleaseChannel(channel.ID)
-			rateSkipped = true
-			iter.SkipRateLimit(channel.ID, usedKey.ID, channel.Name,
-				fmt.Sprintf("channel at max rpm (%d)", channel.MaxRPM))
-			continue
-		}
-
-		// 一个 slot 覆盖该渠道的全部内部重试，并在切换候选前释放。
-		result := func() attemptResult {
-			defer balancer.ReleaseChannel(channel.ID)
-			var result attemptResult
-			for retryNum := 0; retryNum < maxSameChannelRetries; retryNum++ {
-				// 重试前等待退避
-				if retryNum > 0 {
-					delay := computeBackoff(retryNum, result.RetryAfter)
-					log.Infof("same-channel retry %d/%d for %s, waiting %v",
-						retryNum, maxSameChannelRetries, channel.Name, delay)
-					select {
-					case <-c.Request.Context().Done():
-						log.Debugf("request context canceled during retry backoff")
-						return attemptResult{Canceled: true, Err: context.Canceled}
-					case <-time.After(delay):
-					}
-				}
-
-				ra, attemptErr := newRelayAttempt(req, channel, usedKey, attemptPlan, group.FirstTokenTimeOut)
-				if attemptErr != nil {
-					return attemptResult{Err: attemptErr, StatusCode: http.StatusInternalServerError}
-				}
-
-				result = ra.attempt()
-				if result.Success || result.Written || result.Canceled || result.ResetConversation || result.FirstTokenTimeout || !isRetryableStatus(result.StatusCode) {
-					break
-				}
-			}
-			return result
-		}()
-
-		// 同通道重试耗尽后记录熔断器失败
-		if !result.Success && !result.Written && !result.Canceled && !result.ResetConversation {
-			failureKind := circuitFailureKind(group.RetryEnabled, result.StatusCode)
-			balancer.RecordFailure(channel.ID, usedKey.ID, attemptPlan.UpstreamModel(), failureKind)
-			outlierwindow.Report(channel.ID, false, result.StatusCode, time.Now())
-			if failureKind == balancer.FailureHard {
-				maybeLearnManagedRoute(c.Request.Context(), channel.ID, attemptPlan.UpstreamModel(), inboundType, result.Err)
-			}
-		}
-
-		if result.Success {
-			outlierwindow.Report(channel.ID, true, result.StatusCode, time.Now())
-
-			// === HTTP Replay 状态保存 ===
-			// 成功后，如果是 OpenAI Responses HTTP 请求，保存 replay 状态供后续续接
-			// 注意：exact replay 请求成功后也需要保存新状态，否则只能续接一轮
-			// 优先使用 metrics.InternalResponse（streaming 安全），避免二次 GetInternalResponse 消耗聚合器
-			if inboundType == inbound.InboundTypeOpenAIResponse &&
-				req.internalRequest.RawAPIFormat == model.APIFormatOpenAIResponse {
-				internalResponse := metrics.InternalResponse
-				if internalResponse == nil {
-					var err error
-					internalResponse, err = inAdapter.GetInternalResponse(c.Request.Context())
-					if err != nil {
-						log.Debugf("failed to get internal response for replay state save: %v", err)
-					}
-				}
-				if internalResponse != nil {
-					// 如果是 exact replay 请求，基于已有状态继续累积
-					var newState *wsConversationState
-					if req.internalRequest.IsOpenAIExactReplayRequest() && responsesReplayState != nil {
-						newState = cloneWSConversationState(responsesReplayState)
-						if newState != nil {
-							newState.ChannelID = channel.ID
-							newState.ChannelKeyID = usedKey.ID
-						}
-					}
-					if newState == nil {
-						newState = &wsConversationState{
-							RequestModel: requestModel,
-							ChannelID:    channel.ID,
-							ChannelKeyID: usedKey.ID,
-						}
-					}
-					newState.ApplySuccessfulTurn(req.internalRequest, internalResponse)
-					if newState.LastResponseID != "" {
-						ttl := wsConversationStateTTL(group.SessionKeepTime)
-						storeResponsesReplayState(apiKeyID, group.ID, requestModel, newState, ttl)
-						log.Debugf("saved HTTP replay state (apikey=%d, group=%d, model=%s, response_id=%s, channel=%d, key=%d, ttl=%v, is_replay=%t)",
-							apiKeyID, group.ID, requestModel, newState.LastResponseID, channel.ID, usedKey.ID, ttl, req.internalRequest.IsOpenAIExactReplayRequest())
-					}
-				}
-			}
-
-			metrics.SaveWithChannelStats(c.Request.Context(), true, nil, iter.Attempts(), false)
+			h.metrics.SaveWithChannelStats(h.c.Request.Context(), false, context.Canceled, h.iterator.Attempts(), false)
 			return
 		}
-		if result.Canceled {
-			metrics.SaveWithChannelStats(c.Request.Context(), false, result.Err, iter.Attempts(), false)
+		if h.processCandidate() {
 			return
 		}
-		if result.ResetConversation {
-			metrics.SaveWithChannelStats(c.Request.Context(), false, result.Err, iter.Attempts(), false)
-			if publicErr, ok := classifyWSPublicError(result.Err, result.StatusCode); ok {
-				hb.FlushOrError(c, publicErr.Status, publicErr.Message)
-			} else {
-				hb.FlushOrError(c, result.StatusCode, result.Err.Error())
-			}
-			return
-		}
-		if result.Written {
-			metrics.SaveWithChannelStats(c.Request.Context(), false, result.Err, iter.Attempts(), false)
-			return
-		}
-		lastErr = result.Err
-		lastResult = result
 	}
+	writeExhaustedRelayError(exhaustedRelayInput{
+		c: h.c, heartbeat: h.heartbeat, metrics: h.metrics, attempts: h.iterator.Attempts(),
+		lastErr: h.lastErr, lastResult: h.lastResult, capacitySkipped: h.capacitySkipped,
+		rateSkipped: h.rateSkipped, passthroughRequired: h.passthroughRequired,
+		passthroughCapableFound: h.passthroughCapable,
+	})
+}
 
-	// 所有候选通道均失败
-	if responsesPassthroughRequired && !responsesPassthroughCapableFound {
-		err := fmt.Errorf("openai responses native tools require an openai responses channel")
-		metrics.SaveWithChannelStats(c.Request.Context(), false, err, iter.Attempts(), false)
-		hb.FlushOrError(c, http.StatusBadRequest, "当前请求包含 OpenAI Responses 原生工具，仅支持 OpenAI Responses 通道直通")
-		return
+func (h *relayHandler) processCandidate() bool {
+	item := h.iterator.Item()
+	channel, err := op.ChannelGet(item.ChannelID, h.c.Request.Context())
+	if err != nil {
+		log.Warnf("failed to get channel %d: %v", item.ChannelID, err)
+		h.iterator.Skip(item.ChannelID, 0, fmt.Sprintf("channel_%d", item.ChannelID), fmt.Sprintf("channel not found: %v", err))
+		h.lastErr = err
+		return false
 	}
-	metrics.SaveWithChannelStats(c.Request.Context(), false, lastErr, iter.Attempts(), false)
-	if lastErr == nil && rateSkipped {
-		c.Header("Retry-After", "60")
-		hb.FlushOrError(c, http.StatusTooManyRequests, "all eligible channels are at max rpm")
-		return
+	if !channel.Enabled {
+		h.iterator.Skip(channel.ID, 0, channel.Name, "channel disabled")
+		return false
 	}
-	if lastErr == nil && capacitySkipped {
-		c.Header("Retry-After", "1")
-		hb.FlushOrError(c, http.StatusServiceUnavailable, "all eligible channels are at max concurrency")
-		return
+	legacyEligible, reason := legacyChannelEligibility(channel, h.request.internalRequest, h.passthroughRequired)
+	if h.routingMode != protocolroute.RoutingAdaptive && !legacyEligible {
+		h.iterator.Skip(channel.ID, 0, channel.Name, reason)
+		return false
 	}
+	key, plan := h.selectCandidateAttempt(channel, item.ModelName, legacyEligible)
+	if key.ChannelKey == "" {
+		return false
+	}
+	if plan.UpstreamProtocol() == protocol.OpenAIResponse {
+		h.passthroughCapable = true
+	}
+	if !h.acquireCandidate(channel, key) {
+		return false
+	}
+	result := runSameChannelAttempts(h.c.Request.Context(), h.request, channel, key, plan,
+		h.group.FirstTokenTimeOut, h.maxRetries)
+	return h.handleAttemptResult(channel, key, plan, result)
+}
 
-	// 透传 429/503 状态码和 Retry-After 头，让客户端 SDK 的重试机制接管
-	if isPassthroughStatus(lastResult.StatusCode) {
-		if lastResult.RetryAfter > 0 {
-			c.Header("Retry-After", fmt.Sprintf("%d", int(lastResult.RetryAfter.Seconds())))
+func (h *relayHandler) selectCandidateAttempt(channel *dbmodel.Channel, upstreamModel string, legacyEligible bool) (dbmodel.ChannelKey, *protocolroute.AttemptPlan) {
+	log.Debugf("request model %s, mode: %d, forwarding to channel: %s model: %s (attempt %d/%d, sticky=%t)",
+		h.request.requestModel, h.group.Mode, channel.Name, upstreamModel,
+		h.iterator.Index()+1, h.iterator.Len(), h.iterator.IsSticky())
+	return selectChannelAttempt(channelAttemptInput{
+		channel: channel, upstreamModel: upstreamModel, requestModel: h.request.requestModel,
+		request: h.request.internalRequest, iterator: h.iterator, policyState: h.policyState,
+		policySnapshot: h.policySnapshot, routingMode: h.routingMode, legacyEligible: legacyEligible,
+		responsesPassthroughRequired: h.passthroughRequired,
+	})
+}
+
+func (h *relayHandler) acquireCandidate(channel *dbmodel.Channel, key dbmodel.ChannelKey) bool {
+	if !balancer.TryAcquireChannel(channel.ID, channel.MaxConcurrency) {
+		h.capacitySkipped = true
+		h.iterator.SkipCapacity(channel.ID, key.ID, channel.Name,
+			fmt.Sprintf("channel at max concurrency (%d)", channel.MaxConcurrency))
+		return false
+	}
+	if balancer.TryConsumeChannelRPM(channel.ID, channel.MaxRPM, time.Now()) {
+		return true
+	}
+	balancer.ReleaseChannel(channel.ID)
+	h.rateSkipped = true
+	h.iterator.SkipRateLimit(channel.ID, key.ID, channel.Name,
+		fmt.Sprintf("channel at max rpm (%d)", channel.MaxRPM))
+	return false
+}
+
+func (h *relayHandler) handleAttemptResult(channel *dbmodel.Channel, key dbmodel.ChannelKey, plan *protocolroute.AttemptPlan, result attemptResult) bool {
+	if !result.Success && !result.Written && !result.Canceled && !result.ResetConversation {
+		failureKind := circuitFailureKind(h.group.RetryEnabled, result.StatusCode)
+		balancer.RecordFailure(channel.ID, key.ID, plan.UpstreamModel(), failureKind)
+		outlierwindow.Report(channel.ID, false, result.StatusCode, time.Now())
+		if failureKind == balancer.FailureHard {
+			maybeLearnManagedRoute(h.c.Request.Context(), channel.ID, plan.UpstreamModel(), h.inboundType, result.Err)
 		}
-		hb.FlushOrError(c, lastResult.StatusCode, "channel failed")
-		return
 	}
-	if lastResult.StatusCode > 0 {
-		hb.FlushOrError(c, lastResult.StatusCode, "channel failed")
-		return
+	if result.Success {
+		return h.handleSuccessfulAttempt(channel, key, result)
 	}
-	hb.FlushOrError(c, http.StatusBadGateway, "channel failed")
+	if result.Canceled || result.Written {
+		h.metrics.SaveWithChannelStats(h.c.Request.Context(), false, result.Err, h.iterator.Attempts(), false)
+		return true
+	}
+	if result.ResetConversation {
+		h.metrics.SaveWithChannelStats(h.c.Request.Context(), false, result.Err, h.iterator.Attempts(), false)
+		if publicErr, ok := classifyWSPublicError(result.Err, result.StatusCode); ok {
+			h.heartbeat.FlushOrError(h.c, publicErr.Status, publicErr.Message)
+		} else {
+			h.heartbeat.FlushOrError(h.c, result.StatusCode, result.Err.Error())
+		}
+		return true
+	}
+	h.lastErr = result.Err
+	h.lastResult = result
+	return false
+}
+
+func (h *relayHandler) handleSuccessfulAttempt(channel *dbmodel.Channel, key dbmodel.ChannelKey, result attemptResult) bool {
+	outlierwindow.Report(channel.ID, true, result.StatusCode, time.Now())
+	saveHTTPReplayState(httpReplaySaveInput{
+		ctx: h.c.Request.Context(), inboundType: h.inboundType, request: h.request.internalRequest,
+		inAdapter: h.request.inAdapter, metrics: h.metrics, previousState: h.replayState,
+		apiKeyID: h.request.apiKeyID, groupID: h.group.ID, groupTTL: h.group.SessionKeepTime,
+		requestModel: h.request.requestModel, channelID: channel.ID, channelKeyID: key.ID,
+	})
+	h.metrics.SaveWithChannelStats(h.c.Request.Context(), true, nil, h.iterator.Attempts(), false)
+	return true
 }
