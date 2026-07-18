@@ -95,11 +95,21 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
+      - name: 准备生产 Dockerfile
+        shell: bash
+        run: |
+          if [ -n "${{ inputs.tag }}" ]; then
+            git show "${{ github.sha }}:Dockerfile.build" > "$RUNNER_TEMP/Dockerfile.build"
+            echo "dockerfile=$RUNNER_TEMP/Dockerfile.build" >> "$GITHUB_ENV"
+          else
+            echo "dockerfile=./Dockerfile.build" >> "$GITHUB_ENV"
+          fi
+
       - name: 构建并推送生产镜像
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: ./Dockerfile.build
+          file: ${{ env.dockerfile }}
           push: true
           platforms: linux/amd64
           tags: ${{ steps.image-tags.outputs.tags }}
