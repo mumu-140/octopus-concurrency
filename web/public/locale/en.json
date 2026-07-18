@@ -665,7 +665,9 @@
         "override": "Override the channel default with {list}.",
         "autoEmpty": "Auto mode with no fallback list uses the channel default only.",
         "auto": "Try the channel default first; fall back to {list} on clear mismatch."
-      }
+      },
+      "expand": "Expand protocol settings",
+      "collapse": "Collapse protocol settings"
     }
   },
   "model": {

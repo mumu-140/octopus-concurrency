@@ -545,8 +545,8 @@ export function GroupEditor({
                         onPreferredChange={setPreferredProtocols}
                     />
 
-                    <div className="flex-1 min-h-0">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 h-full min-h-0">
+                    <div className="flex-1 min-h-0 overflow-hidden">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 h-full min-h-[18rem]">
                             <ModelPickerSection
                                 modelChannels={modelChannels}
                                 selectedMembers={selectedMembers}
