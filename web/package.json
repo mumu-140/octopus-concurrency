@@ -1,6 +1,6 @@
 {
   "name": "octopus",
-  "version": "0.10.2-mumu.1",
+  "version": "0.10.2-mumu.2",
   "private": true,
   "packageManager": "pnpm@11.13.1",
   "scripts": {
