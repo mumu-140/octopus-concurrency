@@ -23,7 +23,7 @@ type Group struct {
 	Pinned             bool               `json:"pinned" gorm:"default:false;index"`  // 置顶
 	PinnedAt           *time.Time         `json:"pinned_at,omitempty"`                // 置顶时间，置顶时写入，取消置顶时置空
 	ActivePresetID     *int               `json:"active_preset_id,omitempty"`         // 当前激活的预设ID，仅 UI 标记，不参与路由
-	ProtocolMode       ProtocolPolicyMode `json:"protocol_mode" gorm:"type:varchar(16);not null;default:'inherit'"`
+	ProtocolMode       ProtocolPolicyMode `json:"protocol_mode" gorm:"type:varchar(16);not null;default:'follow'"`
 	PreferredProtocols []string           `json:"preferred_protocols" gorm:"serializer:json"`
 	PolicyRevision     int64              `json:"policy_revision" gorm:"not null;default:0"`
 	Items              []GroupItem        `json:"items,omitempty" gorm:"foreignKey:GroupID"`
@@ -51,7 +51,7 @@ type GroupPreset struct {
 	RetryEnabled       bool               `json:"retry_enabled"`
 	MaxRetries         int                `json:"max_retries"`
 	Items              []GroupPresetItem  `json:"items" gorm:"serializer:json;type:text"`
-	ProtocolMode       ProtocolPolicyMode `json:"protocol_mode" gorm:"type:varchar(16);not null;default:'inherit'"`
+	ProtocolMode       ProtocolPolicyMode `json:"protocol_mode" gorm:"type:varchar(16);not null;default:'follow'"`
 	PreferredProtocols []string           `json:"preferred_protocols" gorm:"serializer:json"`
 	PolicyRevision     int64              `json:"policy_revision" gorm:"not null;default:0"`
 	CreatedAt          time.Time          `json:"created_at"`
@@ -69,17 +69,19 @@ type GroupPresetItem struct {
 
 // GroupUpdateRequest 分组更新请求 - 仅包含变更的数据
 type GroupUpdateRequest struct {
-	ID                int                      `json:"id" binding:"required"`
-	Name              *string                  `json:"name,omitempty"`                 // 仅在名称变更时发送
-	Mode              *GroupMode               `json:"mode,omitempty"`                 // 仅在模式变更时发送
-	MatchRegex        *string                  `json:"match_regex,omitempty"`          // 仅在匹配正则变更时发送
-	FirstTokenTimeOut *int                     `json:"first_token_time_out,omitempty"` // 仅在超时变更时发送(秒)
-	SessionKeepTime   *int                     `json:"session_keep_time,omitempty"`    // 仅在会话保持时间变更时发送(秒)
-	RetryEnabled      *bool                    `json:"retry_enabled,omitempty"`        // 启用同通道重试+透传429/503
-	MaxRetries        *int                     `json:"max_retries,omitempty"`          // 同通道最大重试次数
-	ItemsToAdd        []GroupItemAddRequest    `json:"items_to_add,omitempty"`         // 新增的 items
-	ItemsToUpdate     []GroupItemUpdateRequest `json:"items_to_update,omitempty"`      // 更新的 items (priority 变更)
-	ItemsToDelete     []int                    `json:"items_to_delete,omitempty"`      // 删除的 item IDs
+	ID                 int                      `json:"id" binding:"required"`
+	Name               *string                  `json:"name,omitempty"`                 // 仅在名称变更时发送
+	Mode               *GroupMode               `json:"mode,omitempty"`                 // 仅在模式变更时发送
+	MatchRegex         *string                  `json:"match_regex,omitempty"`          // 仅在匹配正则变更时发送
+	FirstTokenTimeOut  *int                     `json:"first_token_time_out,omitempty"` // 仅在超时变更时发送(秒)
+	SessionKeepTime    *int                     `json:"session_keep_time,omitempty"`    // 仅在会话保持时间变更时发送(秒)
+	RetryEnabled       *bool                    `json:"retry_enabled,omitempty"`        // 启用同通道重试+透传429/503
+	MaxRetries         *int                     `json:"max_retries,omitempty"`          // 同通道最大重试次数
+	ProtocolMode       *ProtocolPolicyMode      `json:"protocol_mode,omitempty"`
+	PreferredProtocols *[]string                `json:"preferred_protocols,omitempty"`
+	ItemsToAdd         []GroupItemAddRequest    `json:"items_to_add,omitempty"`    // 新增的 items
+	ItemsToUpdate      []GroupItemUpdateRequest `json:"items_to_update,omitempty"` // 更新的 items (priority 变更)
+	ItemsToDelete      []int                    `json:"items_to_delete,omitempty"` // 删除的 item IDs
 }
 
 // GroupItemAddRequest 新增 item 请求
@@ -111,14 +113,16 @@ type GroupPresetCreateRequest struct {
 // Items 为整体替换语义（非增量），nil 表示不变
 // 若该预设是 active，编辑结果会同步镜像到所属 Group（live binding）
 type GroupPresetUpdateRequest struct {
-	Name              *string            `json:"name,omitempty"`
-	Mode              *GroupMode         `json:"mode,omitempty"`
-	MatchRegex        *string            `json:"match_regex,omitempty"`
-	FirstTokenTimeOut *int               `json:"first_token_time_out,omitempty"`
-	SessionKeepTime   *int               `json:"session_keep_time,omitempty"`
-	RetryEnabled      *bool              `json:"retry_enabled,omitempty"`
-	MaxRetries        *int               `json:"max_retries,omitempty"`
-	Items             *[]GroupPresetItem `json:"items,omitempty"`
+	Name               *string             `json:"name,omitempty"`
+	Mode               *GroupMode          `json:"mode,omitempty"`
+	MatchRegex         *string             `json:"match_regex,omitempty"`
+	FirstTokenTimeOut  *int                `json:"first_token_time_out,omitempty"`
+	SessionKeepTime    *int                `json:"session_keep_time,omitempty"`
+	RetryEnabled       *bool               `json:"retry_enabled,omitempty"`
+	MaxRetries         *int                `json:"max_retries,omitempty"`
+	Items              *[]GroupPresetItem  `json:"items,omitempty"`
+	ProtocolMode       *ProtocolPolicyMode `json:"protocol_mode,omitempty"`
+	PreferredProtocols *[]string           `json:"preferred_protocols,omitempty"`
 }
 
 // GroupPinRequest 置顶/取消置顶

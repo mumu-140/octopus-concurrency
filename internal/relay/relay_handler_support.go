@@ -9,7 +9,6 @@ import (
 	"time"
 
 	dbmodel "github.com/bestruirui/octopus/internal/model"
-	"github.com/bestruirui/octopus/internal/protocol"
 	"github.com/bestruirui/octopus/internal/protocolroute"
 	"github.com/bestruirui/octopus/internal/relay/balancer"
 	"github.com/bestruirui/octopus/internal/server/resp"
@@ -100,15 +99,15 @@ type channelAttemptInput struct {
 	routingMode                  protocolroute.RoutingMode
 	legacyEligible               bool
 	responsesPassthroughRequired bool
+	group                        dbmodel.Group
+	protocolRoutingEnabled       bool
 }
 
-func selectChannelAttempt(input channelAttemptInput) (dbmodel.ChannelKey, *protocolroute.AttemptPlan) {
+func selectChannelAttempt(input channelAttemptInput) (dbmodel.ChannelKey, []*protocolroute.AttemptPlan) {
 	selectOpts := dbmodel.ChannelKeySelectOptions{
 		ExcludeKeyIDs:  make(map[int]struct{}),
 		PreferredKeyID: input.iterator.StickyKeyID(),
 	}
-	channelPolicy := protocolPolicyForChannel(input.policyState, input.channel.ID)
-	legacyConfig, adaptiveProfiles := buildAttemptConfigs(input.channel, channelPolicy)
 	for {
 		usedKey := input.channel.GetChannelKey(selectOpts)
 		if usedKey.ChannelKey == "" {
@@ -122,24 +121,16 @@ func selectChannelAttempt(input channelAttemptInput) (dbmodel.ChannelKey, *proto
 			continue
 		}
 
-		decision := resolveRelayAttemptPlan(relayPlanInput{
-			Snapshot:       input.policySnapshot,
-			Mode:           input.routingMode,
-			ChannelID:      input.channel.ID,
-			ChannelKeyID:   usedKey.ID,
-			ChannelType:    input.channel.Type,
-			RequestedModel: input.requestModel,
-			UpstreamModel:  input.upstreamModel,
-			Request:        input.request,
-			LegacyConfig:   legacyConfig,
-			Profiles:       adaptiveProfiles,
-			LegacyEligible: input.legacyEligible,
+		plans := buildGroupProtocolPlans(groupProtocolPlanInput{
+			Enabled: input.protocolRoutingEnabled, Group: input.group,
+			Channel: input.channel, Key: usedKey,
+			RequestedModel: input.requestModel, UpstreamModel: input.upstreamModel,
+			Request: input.request, LegacyEligible: input.legacyEligible,
 		})
-		if !decision.Incompatible && decision.Plan != nil &&
-			(!input.responsesPassthroughRequired || decision.Plan.UpstreamProtocol() == protocol.OpenAIResponse) {
-			return usedKey, decision.Plan
+		if len(plans) > 0 {
+			return usedKey, plans
 		}
-		selectOpts.ExcludeKeyIDs[usedKey.ID] = struct{}{}
+		return usedKey, nil
 	}
 }
 
@@ -206,6 +197,7 @@ func runProtocolRetries(
 			return attemptResult{Err: err, StatusCode: http.StatusInternalServerError}
 		}
 		result = attempt.attempt()
+		result.Plan = plan
 		if result.Success || result.Written || result.Canceled || result.ResetConversation ||
 			result.FirstTokenTimeout || !isRetryableStatus(result.StatusCode) {
 			break

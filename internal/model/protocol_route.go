@@ -13,10 +13,12 @@ import "time"
 type ProtocolPolicyMode string
 
 const (
-	ProtocolPolicyModeInherit ProtocolPolicyMode = "inherit"
-	ProtocolPolicyModeAuto    ProtocolPolicyMode = "auto"
-	ProtocolPolicyModePrefer  ProtocolPolicyMode = "prefer"
-	ProtocolPolicyModeForce   ProtocolPolicyMode = "force"
+	ProtocolPolicyModeFollow   ProtocolPolicyMode = "follow"
+	ProtocolPolicyModeOverride ProtocolPolicyMode = "override"
+	ProtocolPolicyModeInherit  ProtocolPolicyMode = "inherit"
+	ProtocolPolicyModeAuto     ProtocolPolicyMode = "auto"
+	ProtocolPolicyModePrefer   ProtocolPolicyMode = "prefer"
+	ProtocolPolicyModeForce    ProtocolPolicyMode = "force"
 )
 
 // ProtocolRoutingMode 是全局运行模式字符串，与 protocolroute.RoutingMode 对齐。

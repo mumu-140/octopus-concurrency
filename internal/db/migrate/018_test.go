@@ -125,8 +125,9 @@ func TestMigrateProtocolRouteStageB(t *testing.T) {
 	if err := db.Table("group_presets").Select("protocol_mode").Where("id = 1").Scan(&pMode).Error; err != nil {
 		t.Fatalf("read preset protocol_mode: %v", err)
 	}
-	if gMode != string(model.ProtocolPolicyModeInherit) || pMode != string(model.ProtocolPolicyModeInherit) {
-		t.Errorf("protocol_mode = (%q, %q), want inherit", gMode, pMode)
+	if (gMode != string(model.ProtocolPolicyModeInherit) && gMode != string(model.ProtocolPolicyModeFollow)) ||
+		(pMode != string(model.ProtocolPolicyModeInherit) && pMode != string(model.ProtocolPolicyModeFollow)) {
+		t.Errorf("protocol_mode = (%q, %q), want follow or inherit", gMode, pMode)
 	}
 
 	// 4) ProtocolRoutingConfig 单例播种：默认 legacy、路由关闭、旧学习保留

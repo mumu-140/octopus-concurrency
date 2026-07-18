@@ -29,24 +29,22 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 }
 
 type relayHandler struct {
-	inboundType         inbound.InboundType
-	c                   *gin.Context
-	group               dbmodel.Group
-	policyState         *dbmodel.ProtocolPolicyState
-	policySnapshot      protocolroute.PolicySnapshot
-	routingMode         protocolroute.RoutingMode
-	replayState         *wsConversationState
-	iterator            *balancer.Iterator
-	heartbeat           *earlyHeartbeat
-	metrics             *RelayMetrics
-	request             *relayRequest
-	passthroughRequired bool
-	passthroughCapable  bool
-	lastErr             error
-	lastResult          attemptResult
-	capacitySkipped     bool
-	rateSkipped         bool
-	maxRetries          int
+	inboundType            inbound.InboundType
+	c                      *gin.Context
+	group                  dbmodel.Group
+	protocolRoutingEnabled bool
+	replayState            *wsConversationState
+	iterator               *balancer.Iterator
+	heartbeat              *earlyHeartbeat
+	metrics                *RelayMetrics
+	request                *relayRequest
+	passthroughRequired    bool
+	passthroughCapable     bool
+	lastErr                error
+	lastResult             attemptResult
+	capacitySkipped        bool
+	rateSkipped            bool
+	maxRetries             int
 }
 
 func newRelayHandler(inboundType inbound.InboundType, c *gin.Context) (*relayHandler, bool) {
@@ -59,15 +57,13 @@ func newRelayHandler(inboundType inbound.InboundType, c *gin.Context) (*relayHan
 		resp.ErrorWithCode(c, http.StatusNotFound, CodeRelayModelNotFound, "model not found")
 		return nil, false
 	}
-	policyState, _ := op.ProtocolPolicyRuntimeSnapshot()
-	policySnapshot, routingMode := buildProtocolPolicySnapshot(policyState, group.ID)
 	request, replayState := prepareHTTPReplay(inboundType, c.GetInt("api_key_id"), group.ID, request.Model, request)
 	iterator := newRelayIterator(group, c.GetInt("api_key_id"), request.Model, replayState)
 	if iterator.Len() == 0 {
 		resp.ErrorWithCode(c, http.StatusServiceUnavailable, CodeRelayNoAvailableChannel, "no available channel")
 		return nil, false
 	}
-	return buildRelayHandler(inboundType, c, group, policyState, policySnapshot, routingMode,
+	return buildRelayHandler(inboundType, c, group, op.ProtocolRoutingEnabled(),
 		rawBody, request, inAdapter, replayState, iterator), true
 }
 
@@ -86,9 +82,7 @@ func buildRelayHandler(
 	inboundType inbound.InboundType,
 	c *gin.Context,
 	group dbmodel.Group,
-	policyState *dbmodel.ProtocolPolicyState,
-	policySnapshot protocolroute.PolicySnapshot,
-	routingMode protocolroute.RoutingMode,
+	protocolRoutingEnabled bool,
 	rawBody []byte,
 	request *model.InternalLLMRequest,
 	inAdapter model.Inbound,
@@ -108,8 +102,8 @@ func buildRelayHandler(
 		groupSessionTTL: group.SessionKeepTime, iter: iterator, rawBody: rawBody, heartbeat: heartbeat,
 	}
 	return &relayHandler{
-		inboundType: inboundType, c: c, group: group, policyState: policyState,
-		policySnapshot: policySnapshot, routingMode: routingMode, replayState: replayState,
+		inboundType: inboundType, c: c, group: group,
+		protocolRoutingEnabled: protocolRoutingEnabled, replayState: replayState,
 		iterator: iterator, heartbeat: heartbeat, metrics: metrics, request: requestContext,
 		passthroughRequired: request.HasOpenAIResponsesPassthrough(),
 		maxRetries:          sameChannelRetryLimit(group.RetryEnabled, group.MaxRetries),
@@ -149,33 +143,38 @@ func (h *relayHandler) processCandidate() bool {
 		return false
 	}
 	legacyEligible, reason := legacyChannelEligibility(channel, h.request.internalRequest, h.passthroughRequired)
-	if h.routingMode != protocolroute.RoutingAdaptive && !legacyEligible {
-		h.iterator.Skip(channel.ID, 0, channel.Name, reason)
+	key, plans := h.selectCandidateAttempt(channel, item.ModelName, legacyEligible)
+	if key.ChannelKey == "" || len(plans) == 0 {
+		if key.ChannelKey != "" {
+			h.iterator.Skip(channel.ID, key.ID, channel.Name, reason)
+		}
 		return false
 	}
-	key, plan := h.selectCandidateAttempt(channel, item.ModelName, legacyEligible)
-	if key.ChannelKey == "" {
-		return false
-	}
-	if plan.UpstreamProtocol() == protocol.OpenAIResponse {
-		h.passthroughCapable = true
+	for _, plan := range plans {
+		if plan.UpstreamProtocol() == protocol.OpenAIResponse {
+			h.passthroughCapable = true
+		}
 	}
 	if !h.acquireCandidate(channel, key) {
 		return false
 	}
-	result := runSameChannelAttempts(h.c.Request.Context(), h.request, channel, key, []*protocolroute.AttemptPlan{plan},
+	result := runSameChannelAttempts(h.c.Request.Context(), h.request, channel, key, plans,
 		h.group.FirstTokenTimeOut, h.maxRetries)
-	return h.handleAttemptResult(channel, key, plan, result)
+	usedPlan := plans[0]
+	if result.Plan != nil {
+		usedPlan = result.Plan
+	}
+	return h.handleAttemptResult(channel, key, usedPlan, result)
 }
 
-func (h *relayHandler) selectCandidateAttempt(channel *dbmodel.Channel, upstreamModel string, legacyEligible bool) (dbmodel.ChannelKey, *protocolroute.AttemptPlan) {
+func (h *relayHandler) selectCandidateAttempt(channel *dbmodel.Channel, upstreamModel string, legacyEligible bool) (dbmodel.ChannelKey, []*protocolroute.AttemptPlan) {
 	log.Debugf("request model %s, mode: %d, forwarding to channel: %s model: %s (attempt %d/%d, sticky=%t)",
 		h.request.requestModel, h.group.Mode, channel.Name, upstreamModel,
 		h.iterator.Index()+1, h.iterator.Len(), h.iterator.IsSticky())
 	return selectChannelAttempt(channelAttemptInput{
 		channel: channel, upstreamModel: upstreamModel, requestModel: h.request.requestModel,
-		request: h.request.internalRequest, iterator: h.iterator, policyState: h.policyState,
-		policySnapshot: h.policySnapshot, routingMode: h.routingMode, legacyEligible: legacyEligible,
+		request: h.request.internalRequest, iterator: h.iterator, group: h.group,
+		protocolRoutingEnabled: h.protocolRoutingEnabled, legacyEligible: legacyEligible,
 		responsesPassthroughRequired: h.passthroughRequired,
 	})
 }

@@ -61,6 +61,12 @@ func GroupGetEnabledMap(name string, ctx context.Context) (model.Group, error) {
 }
 
 func GroupCreate(group *model.Group, ctx context.Context) error {
+	mode, protocols, err := normalizeGroupProtocolPolicy(group.ProtocolMode, group.PreferredProtocols)
+	if err != nil {
+		return err
+	}
+	group.ProtocolMode = mode
+	group.PreferredProtocols = protocols
 	if err := db.GetDB().WithContext(ctx).Create(group).Error; err != nil {
 		return err
 	}
@@ -76,6 +82,10 @@ func GroupUpdate(req *model.GroupUpdateRequest, ctx context.Context) (*model.Gro
 	}
 	oldName := oldGroup.Name
 	affectedChannelIDs := groupUpdateAffectedChannelIDs(oldGroup, req)
+	protocolMode, preferredProtocols, err := groupProtocolPolicyForUpdate(oldGroup, req)
+	if err != nil {
+		return nil, err
+	}
 
 	tx := db.GetDB().WithContext(ctx).Begin()
 	defer func() {
@@ -118,6 +128,11 @@ func GroupUpdate(req *model.GroupUpdateRequest, ctx context.Context) (*model.Gro
 		}
 		selectFields = append(selectFields, "max_retries")
 		updates.MaxRetries = v
+	}
+	if req.ProtocolMode != nil || req.PreferredProtocols != nil {
+		selectFields = append(selectFields, "protocol_mode", "preferred_protocols")
+		updates.ProtocolMode = protocolMode
+		updates.PreferredProtocols = preferredProtocols
 	}
 
 	if len(selectFields) > 0 {

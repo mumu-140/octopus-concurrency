@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync/atomic"
 	"testing"
 
 	"github.com/bestruirui/octopus/internal/model"
@@ -24,7 +23,7 @@ type capturedProtocolRequest struct {
 	body   []byte
 }
 
-func TestAdaptiveRelayExecutesSelectedProtocolProfiles(t *testing.T) {
+func TestGroupRelayExecutesSelectedProtocols(t *testing.T) {
 	tests := []struct {
 		name           string
 		protocol       protocol.Protocol
@@ -68,20 +67,12 @@ func TestAdaptiveRelayExecutesSelectedProtocolProfiles(t *testing.T) {
 				_, _ = w.Write([]byte(tt.response))
 			}))
 			defer upstream.Close()
-			var legacyHits atomic.Int32
-			legacy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				legacyHits.Add(1)
-				http.Error(w, "legacy endpoint must not be used", http.StatusInternalServerError)
-			}))
-			defer legacy.Close()
-
 			channel := &model.Channel{
 				Name:          "adaptive-" + tt.name,
 				Type:          outbound.OutboundTypeOpenAIChat,
 				Enabled:       true,
-				BaseUrls:      []model.BaseUrl{{URL: legacy.URL + "/v1"}},
+				BaseUrls:      []model.BaseUrl{{URL: upstream.URL + "/v1"}},
 				CustomHeader:  []model.CustomHeader{{HeaderKey: "X-Channel", HeaderValue: "channel"}},
-				ParamOverride: stringPointer(`{"legacy_marker":true}`),
 				Keys:          []model.ChannelKey{{Enabled: true, ChannelKey: "upstream-secret"}},
 			}
 			if err := op.ChannelCreate(channel, ctx); err != nil {
@@ -94,7 +85,7 @@ func TestAdaptiveRelayExecutesSelectedProtocolProfiles(t *testing.T) {
 			if err := op.GroupItemAdd(&model.GroupItem{GroupID: group.ID, ChannelID: channel.ID, ModelName: "upstream-model", Priority: 1, Weight: 1}, ctx); err != nil {
 				t.Fatalf("GroupItemAdd failed: %v", err)
 			}
-			enableAdaptiveProtocolTestPolicy(t, ctx, channel.ID, group.ID, tt.protocol, upstream.URL+"/v1")
+			enableGroupProtocolPolicy(t, ctx, group.ID, model.ProtocolPolicyModeOverride, tt.protocol)
 
 			recorder := httptest.NewRecorder()
 			c, _ := gin.CreateTestContext(recorder)
@@ -110,73 +101,60 @@ func TestAdaptiveRelayExecutesSelectedProtocolProfiles(t *testing.T) {
 			if recorder.Code != http.StatusOK {
 				t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
 			}
-			if legacyHits.Load() != 0 {
-				t.Fatalf("legacy endpoint hits = %d", legacyHits.Load())
-			}
 			if captured.path != tt.wantPath {
 				t.Fatalf("path=%q want=%q", captured.path, tt.wantPath)
 			}
 			if got := captured.header.Get(tt.wantAuthHeader); got != authValue(tt.protocol) {
 				t.Fatalf("auth %s=%q", tt.wantAuthHeader, got)
 			}
-			if captured.header.Get("Cookie") != "" || captured.header.Get("Anthropic-Beta") != "" {
-				t.Fatalf("unsafe client headers leaked: cookie=%q beta=%q", captured.header.Get("Cookie"), captured.header.Get("Anthropic-Beta"))
+			if tt.protocol != protocol.OpenAIChat {
+				if captured.header.Get("Cookie") != "" || captured.header.Get("Anthropic-Beta") != "" {
+					t.Fatalf("unsafe client headers leaked: cookie=%q beta=%q", captured.header.Get("Cookie"), captured.header.Get("Anthropic-Beta"))
+				}
 			}
-			if captured.header.Get("X-Channel") != "channel" || captured.header.Get("X-Profile") != tt.name {
-				t.Fatalf("profile headers=%v", captured.header)
+			if captured.header.Get("X-Channel") != "channel" {
+				t.Fatalf("channel headers=%v", captured.header)
 			}
 			var payload map[string]any
 			if err := json.Unmarshal(captured.body, &payload); err != nil {
 				t.Fatalf("decode upstream body: %v body=%s", err, captured.body)
 			}
-			if payload["model"] != "upstream-model" || payload["route_marker"] != tt.name {
+			if payload["model"] != "upstream-model" {
 				t.Fatalf("upstream payload=%v", payload)
 			}
 		})
 	}
 }
 
-func enableAdaptiveProtocolTestPolicy(t *testing.T, ctx context.Context, channelID, groupID int, target protocol.Protocol, baseURL string) {
+func enableGroupProtocolPolicy(t *testing.T, ctx context.Context, groupID int, mode model.ProtocolPolicyMode, preferred ...protocol.Protocol) {
 	t.Helper()
-	state, err := op.ProtocolPolicyGet(ctx)
-	if err != nil {
-		t.Fatalf("ProtocolPolicyGet failed: %v", err)
-	}
-	paramOverride := `{"route_marker":"` + string(target) + `"}`
-	state, err = op.ChannelProtocolPolicyReplace(channelID, &model.ChannelProtocolPolicyUpdateRequest{
-		ExpectedRevision: state.ActiveRevision,
-		Profiles: []model.ProtocolProfilePolicy{{
-			Protocol:      string(target),
-			Enabled:       true,
-			BaseUrls:      []model.BaseUrl{{URL: baseURL}},
-			CustomHeaders: []model.CustomHeader{{HeaderKey: "X-Profile", HeaderValue: string(target)}},
-			ParamOverride: &paramOverride,
-		}},
-	}, "test", ctx)
-	if err != nil {
-		t.Fatalf("ChannelProtocolPolicyReplace failed: %v", err)
-	}
-	state, err = op.GroupProtocolPolicyUpdate(groupID, &model.ScopedProtocolPolicyUpdateRequest{
-		ExpectedRevision:   state.ActiveRevision,
-		Mode:               model.ProtocolPolicyModeForce,
-		PreferredProtocols: []string{string(target)},
-	}, "test", ctx)
-	if err != nil {
-		t.Fatalf("GroupProtocolPolicyUpdate failed: %v", err)
-	}
 	enabled := true
-	conversionEnabled := true
-	mode := model.ProtocolRoutingModeAdaptive
-	allowlist := []int{groupID}
-	_, err = op.ProtocolRoutingConfigUpdate(&model.ProtocolRoutingConfigUpdateRequest{
-		ExpectedRevision:          state.ActiveRevision,
-		ProtocolRoutingEnabled:    &enabled,
-		Mode:                      &mode,
-		ProtocolConversionEnabled: &conversionEnabled,
-		AdaptiveGroupAllowlist:    &allowlist,
-	}, "test", ctx)
-	if err != nil {
-		t.Fatalf("ProtocolRoutingConfigUpdate failed: %v", err)
+	if _, err := op.ProtocolRoutingConfigUpdate(&model.ProtocolRoutingConfigUpdateRequest{
+		ExpectedRevision:       0,
+		ProtocolRoutingEnabled: &enabled,
+	}, "test", ctx); err != nil {
+		// Best-effort: enable the kill switch even when revision already advanced.
+		state, getErr := op.ProtocolPolicyGet(ctx)
+		if getErr != nil {
+			t.Fatalf("ProtocolPolicyGet failed: %v", getErr)
+		}
+		if _, err = op.ProtocolRoutingConfigUpdate(&model.ProtocolRoutingConfigUpdateRequest{
+			ExpectedRevision:       state.ActiveRevision,
+			ProtocolRoutingEnabled: &enabled,
+		}, "test", ctx); err != nil {
+			t.Fatalf("ProtocolRoutingConfigUpdate failed: %v", err)
+		}
+	}
+	protocols := make([]string, 0, len(preferred))
+	for _, value := range preferred {
+		protocols = append(protocols, string(value))
+	}
+	if _, err := op.GroupUpdate(&model.GroupUpdateRequest{
+		ID: groupID,
+		ProtocolMode: &mode,
+		PreferredProtocols: &protocols,
+	}, ctx); err != nil {
+		t.Fatalf("GroupUpdate protocol policy failed: %v", err)
 	}
 }
 

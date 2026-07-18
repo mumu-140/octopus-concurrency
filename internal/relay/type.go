@@ -149,4 +149,5 @@ type attemptResult struct {
 	UpstreamErrorBody string        // 原始上游错误体，仅用于封闭的协议 mismatch 分类
 	UpstreamStatus    int           // 未归一化的上游 HTTP 状态码
 	UpstreamStarted   bool          // 上游已返回成功状态，可能已开始模型执行
+	Plan              *protocolroute.AttemptPlan
 }

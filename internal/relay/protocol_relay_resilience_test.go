@@ -11,7 +11,6 @@ import (
 
 	"github.com/bestruirui/octopus/internal/model"
 	"github.com/bestruirui/octopus/internal/op"
-	"github.com/bestruirui/octopus/internal/protocol"
 	"github.com/bestruirui/octopus/internal/transformer/inbound"
 	"github.com/bestruirui/octopus/internal/transformer/outbound"
 	"github.com/gin-gonic/gin"
@@ -114,7 +113,7 @@ func setupAdaptiveChatRoute(t *testing.T, ctx context.Context, baseURL string, r
 	if err := op.GroupItemAdd(&model.GroupItem{GroupID: group.ID, ChannelID: channel.ID, ModelName: "upstream-model", Priority: 1, Weight: 1}, ctx); err != nil {
 		t.Fatalf("GroupItemAdd failed: %v", err)
 	}
-	enableAdaptiveProtocolTestPolicy(t, ctx, channel.ID, group.ID, protocol.OpenAIChat, baseURL)
+	enableGroupProtocolPolicy(t, ctx, group.ID, model.ProtocolPolicyModeFollow)
 	return group.Name
 }
 

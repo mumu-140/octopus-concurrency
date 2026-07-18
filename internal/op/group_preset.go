@@ -100,7 +100,7 @@ func GroupPresetCreateBlank(groupID int, name string, ctx context.Context) (*mod
 		Mode:         model.GroupModeRoundRobin,
 		MaxRetries:   3,
 		Items:        []model.GroupPresetItem{},
-		ProtocolMode: model.ProtocolPolicyModeInherit,
+		ProtocolMode: model.ProtocolPolicyModeFollow,
 	}
 	if err := db.GetDB().WithContext(ctx).Create(&preset).Error; err != nil {
 		return nil, fmt.Errorf("failed to create blank preset: %w", err)
@@ -208,6 +208,22 @@ func GroupPresetUpdate(presetID int, req *model.GroupPresetUpdateRequest, ctx co
 		}
 		if req.Items != nil {
 			preset.Items = *req.Items
+		}
+		if req.ProtocolMode != nil || req.PreferredProtocols != nil {
+			mode := preset.ProtocolMode
+			protocols := preset.PreferredProtocols
+			if req.ProtocolMode != nil {
+				mode = *req.ProtocolMode
+			}
+			if req.PreferredProtocols != nil {
+				protocols = *req.PreferredProtocols
+			}
+			normalizedMode, normalizedProtocols, err := normalizeGroupProtocolPolicy(mode, protocols)
+			if err != nil {
+				return err
+			}
+			preset.ProtocolMode = normalizedMode
+			preset.PreferredProtocols = normalizedProtocols
 		}
 		if err := tx.Save(&preset).Error; err != nil {
 			return fmt.Errorf("failed to update preset: %w", err)
