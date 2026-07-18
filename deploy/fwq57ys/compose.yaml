@@ -2,7 +2,7 @@ name: octopus
 
 services:
   octopus:
-    image: mumu-140/octopus-concurrency:v0.10.1-mumu.1
+    image: mumu-140/octopus-concurrency:v0.10.2-mumu.0
     pull_policy: never
     container_name: octopus
     restart: unless-stopped
