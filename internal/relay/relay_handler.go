@@ -163,7 +163,7 @@ func (h *relayHandler) processCandidate() bool {
 	if !h.acquireCandidate(channel, key) {
 		return false
 	}
-	result := runSameChannelAttempts(h.c.Request.Context(), h.request, channel, key, plan,
+	result := runSameChannelAttempts(h.c.Request.Context(), h.request, channel, key, []*protocolroute.AttemptPlan{plan},
 		h.group.FirstTokenTimeOut, h.maxRetries)
 	return h.handleAttemptResult(channel, key, plan, result)
 }

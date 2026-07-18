@@ -198,6 +198,16 @@ type AttemptSpan struct {
 	ended     bool
 }
 
+// SetProtocolDecision attaches protocol routing metadata before the attempt is
+// ended and appended to the iterator log.
+func (s *AttemptSpan) SetProtocolDecision(mode, ingress, selected, kind, fallbackReason string) {
+	s.attempt.ProtocolMode = mode
+	s.attempt.IngressProtocol = ingress
+	s.attempt.SelectedProtocol = selected
+	s.attempt.AttemptKind = kind
+	s.attempt.FallbackReason = fallbackReason
+}
+
 // End 结束尝试：设置状态，自动计算耗时，追加到 Iterator
 func (s *AttemptSpan) End(status model.AttemptStatus, statusCode int, msg string) {
 	if s.ended {

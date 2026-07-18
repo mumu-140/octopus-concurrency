@@ -131,6 +131,9 @@ type relayAttempt struct {
 	firstTokenTimeOutSec int
 	firstTokenBudget     *firstTokenBudget
 	retryAfter           time.Duration // forward() 提取后暂存
+	upstreamErrorBody    string
+	upstreamStatusCode   int
+	upstreamStarted      bool
 }
 
 // attemptResult 封装单次尝试的结果
@@ -143,4 +146,7 @@ type attemptResult struct {
 	Err               error         // 失败时的错误
 	StatusCode        int           // 上游 HTTP 状态码（0 = 连接错误）
 	RetryAfter        time.Duration // 解析的 Retry-After 值
+	UpstreamErrorBody string        // 原始上游错误体，仅用于封闭的协议 mismatch 分类
+	UpstreamStatus    int           // 未归一化的上游 HTTP 状态码
+	UpstreamStarted   bool          // 上游已返回成功状态，可能已开始模型执行
 }

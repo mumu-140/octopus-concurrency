@@ -148,11 +148,46 @@ func runSameChannelAttempts(
 	request *relayRequest,
 	channel *dbmodel.Channel,
 	key dbmodel.ChannelKey,
-	plan *protocolroute.AttemptPlan,
+	plans []*protocolroute.AttemptPlan,
 	firstTokenTimeout int,
 	maxRetries int,
 ) attemptResult {
 	defer balancer.ReleaseChannel(channel.ID)
+	if len(plans) == 0 {
+		return attemptResult{Err: fmt.Errorf("protocol attempt plans are empty"), StatusCode: http.StatusInternalServerError}
+	}
+
+	activePlans := append([]*protocolroute.AttemptPlan(nil), plans...)
+	var result attemptResult
+	for planIndex, plan := range activePlans {
+		result = runProtocolRetries(ctx, request, channel, key, plan, firstTokenTimeout, maxRetries)
+		if planIndex+1 >= len(plans) {
+			return result
+		}
+		decision := protocolroute.ClassifyProtocolFallback(protocolroute.FallbackInput{
+			StatusCode:      fallbackStatus(result),
+			ErrorBody:       result.UpstreamErrorBody,
+			UpstreamStarted: result.UpstreamStarted,
+			DeliveryStarted: result.Written,
+			AlreadyFallback: planIndex > 0,
+		})
+		if !decision.Allowed || !sameCandidateIdentity(plan, activePlans[planIndex+1]) {
+			return result
+		}
+		activePlans[planIndex+1] = activePlans[planIndex+1].AsProtocolFallback(decision.Reason)
+	}
+	return result
+}
+
+func runProtocolRetries(
+	ctx context.Context,
+	request *relayRequest,
+	channel *dbmodel.Channel,
+	key dbmodel.ChannelKey,
+	plan *protocolroute.AttemptPlan,
+	firstTokenTimeout int,
+	maxRetries int,
+) attemptResult {
 	var result attemptResult
 	for retryNum := 0; retryNum < maxRetries; retryNum++ {
 		if retryNum > 0 {
@@ -177,6 +212,20 @@ func runSameChannelAttempts(
 		}
 	}
 	return result
+}
+
+func fallbackStatus(result attemptResult) int {
+	if result.UpstreamStatus != 0 {
+		return result.UpstreamStatus
+	}
+	return result.StatusCode
+}
+
+func sameCandidateIdentity(primary, fallback *protocolroute.AttemptPlan) bool {
+	return primary != nil && fallback != nil &&
+		primary.ChannelID() == fallback.ChannelID() &&
+		primary.ChannelKeyID() == fallback.ChannelKeyID() &&
+		primary.UpstreamModel() == fallback.UpstreamModel()
 }
 
 type httpReplaySaveInput struct {

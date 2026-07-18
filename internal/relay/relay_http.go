@@ -107,15 +107,18 @@ func (ra *relayAttempt) forwardViaHTTPPassthrough(ctx context.Context, pt model.
 		return 0, fmt.Errorf("failed to send request: %w", err)
 	}
 	defer response.Body.Close()
+	ra.upstreamStatusCode = response.StatusCode
 
 	// Check status
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		ra.retryAfter = parseRetryAfter(response.Header.Get("Retry-After"))
 		body, _ := io.ReadAll(response.Body)
+		ra.upstreamErrorBody = string(body)
 		statusCode := normalizeUpstreamStatusCode(response.StatusCode, string(body))
 		log.Warnf("upstream error from channel %s: status=%d, body=%s", ra.channel.Name, response.StatusCode, string(body))
 		return statusCode, fmt.Errorf("upstream error: %d: %s", response.StatusCode, string(body))
 	}
+	ra.upstreamStarted = true
 
 	// Get passthrough config
 	cfg := pt.PassthroughConfig()
@@ -188,6 +191,7 @@ func (ra *relayAttempt) forwardViaHTTPStandard(ctx context.Context) (int, error)
 		return 0, fmt.Errorf("failed to send request: %w", err)
 	}
 	defer response.Body.Close()
+	ra.upstreamStatusCode = response.StatusCode
 
 	// 检查响应状态
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
@@ -196,10 +200,12 @@ func (ra *relayAttempt) forwardViaHTTPStandard(ctx context.Context) (int, error)
 		if err != nil {
 			return response.StatusCode, fmt.Errorf("failed to read response body: %w", err)
 		}
+		ra.upstreamErrorBody = string(body)
 		statusCode := normalizeUpstreamStatusCode(response.StatusCode, string(body))
 		log.Warnf("upstream error from channel %s: status=%d, body=%s", ra.channel.Name, response.StatusCode, string(body))
 		return statusCode, fmt.Errorf("upstream error: %d: %s", response.StatusCode, string(body))
 	}
+	ra.upstreamStarted = true
 
 	// 处理响应
 	if ra.internalRequest.Stream != nil && *ra.internalRequest.Stream {

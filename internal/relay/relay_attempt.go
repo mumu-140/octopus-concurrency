@@ -20,6 +20,15 @@ func circuitFailureKind(retryEnabled bool, statusCode int) balancer.FailureKind 
 // attempt 统一管理一次通道尝试的完整生命周期
 func (ra *relayAttempt) attempt() attemptResult {
 	span := ra.iter.StartAttempt(ra.channel.ID, ra.usedKey.ID, ra.channel.Name)
+	if ra.plan != nil {
+		span.SetProtocolDecision(
+			string(ra.plan.GroupProtocolMode()),
+			string(ra.plan.IngressProtocol()),
+			string(ra.plan.UpstreamProtocol()),
+			string(ra.plan.AttemptKind()),
+			ra.plan.FallbackReason(),
+		)
+	}
 	statusCode, fwdErr := ra.forward()
 	ra.usedKey.StatusCode = statusCode
 	ra.usedKey.LastUseTimeStamp = time.Now().Unix()
@@ -47,13 +56,17 @@ func (ra *relayAttempt) finishSuccessfulAttempt(span *balancer.AttemptSpan, stat
 }
 
 func (ra *relayAttempt) finishCanceledAttempt(span *balancer.AttemptSpan, statusCode int, fwdErr error) attemptResult {
-	written := ra.streamPayloadWritten.Load()
+	written := ra.deliveryStarted()
 	if written {
 		ra.collectResponse()
 	}
 	op.ChannelKeyUpdate(ra.usedKey)
 	span.End(dbmodel.AttemptFailed, statusCode, fwdErr.Error())
-	return attemptResult{Written: written, Canceled: true, Err: fwdErr, StatusCode: statusCode}
+	return attemptResult{
+		Written: written, Canceled: true, Err: fwdErr, StatusCode: statusCode,
+		UpstreamErrorBody: ra.upstreamErrorBody, UpstreamStatus: ra.upstreamStatusCode,
+		UpstreamStarted: ra.upstreamStarted,
+	}
 }
 
 func (ra *relayAttempt) finishFailedAttempt(span *balancer.AttemptSpan, statusCode int, fwdErr error) attemptResult {
@@ -63,7 +76,7 @@ func (ra *relayAttempt) finishFailedAttempt(span *balancer.AttemptSpan, statusCo
 		WaitTime:      span.Duration().Milliseconds(),
 		RequestFailed: 1,
 	})
-	written := ra.streamPayloadWritten.Load()
+	written := ra.deliveryStarted()
 	if written {
 		ra.collectResponse()
 	}
@@ -76,5 +89,18 @@ func (ra *relayAttempt) finishFailedAttempt(span *balancer.AttemptSpan, statusCo
 		Err:               fmt.Errorf("channel %s failed: %v", ra.channel.Name, fwdErr),
 		StatusCode:        statusCode,
 		RetryAfter:        ra.retryAfter,
+		UpstreamErrorBody: ra.upstreamErrorBody,
+		UpstreamStatus:    ra.upstreamStatusCode,
+		UpstreamStarted:   ra.upstreamStarted,
 	}
+}
+
+func (ra *relayAttempt) deliveryStarted() bool {
+	if ra.streamPayloadWritten.Load() {
+		return true
+	}
+	if ra.streamWriter != nil {
+		return ra.streamWriter.Written()
+	}
+	return ra.c != nil && ra.c.Writer.Written()
 }
