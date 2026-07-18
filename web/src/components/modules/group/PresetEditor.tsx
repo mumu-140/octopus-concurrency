@@ -13,6 +13,8 @@ import {
     useUpdateGroupPreset,
     type GroupPreset,
     type GroupPresetItem,
+    normalizeGroupProtocolMode,
+    normalizePreferredProtocols,
 } from '@/api/endpoints/group';
 import { toast } from '@/components/common/Toast';
 import { GroupEditor, type GroupEditorValues } from './Editor';
@@ -78,6 +80,8 @@ export function PresetEditorContent({ preset }: PresetEditorContentProps) {
                     session_keep_time: values.session_keep_time,
                     retry_enabled: values.retry_enabled,
                     max_retries: values.max_retries,
+                    protocol_mode: values.protocol_mode,
+                    preferred_protocols: values.preferred_protocols,
                     items,
                 },
             },
@@ -122,6 +126,8 @@ export function PresetEditorContent({ preset }: PresetEditorContentProps) {
                         session_keep_time: preset.session_keep_time ?? 0,
                         retry_enabled: preset.retry_enabled ?? false,
                         max_retries: preset.max_retries ?? 3,
+                        protocol_mode: normalizeGroupProtocolMode(preset.protocol_mode),
+                        preferred_protocols: normalizePreferredProtocols(preset.preferred_protocols),
                         members: initialMembers,
                     }}
                     submitText={t('preset.save')}

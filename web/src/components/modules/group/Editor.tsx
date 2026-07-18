@@ -12,10 +12,12 @@ import { Switch } from '@/components/ui/switch';
 import { Accordion, AccordionContent, AccordionItem } from '@/components/ui/accordion';
 import { cn } from '@/lib/utils';
 import { getModelIcon } from '@/lib/model-icons';
-import type { GroupMode } from '@/api/endpoints/group';
+import type { GroupMode, GroupProtocolMode, ProtocolName } from '@/api/endpoints/group';
+import { normalizeGroupProtocolMode, normalizePreferredProtocols } from '@/api/endpoints/group';
 import type { SelectedMember } from './ItemList';
 import { MemberList } from './ItemList';
 import { matchesGroupName, memberKey, normalizeKey, MODE_LABELS } from './utils';
+import { ProtocolPolicySection } from './ProtocolPolicySection';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/animate-ui/components/animate/tooltip';
 import { HelpCircle } from 'lucide-react';
 
@@ -29,6 +31,8 @@ export type GroupEditorValues = {
     session_keep_time: number;
     retry_enabled: boolean;
     max_retries: number;
+    protocol_mode: GroupProtocolMode;
+    preferred_protocols: ProtocolName[];
     members: SelectedMember[];
 };
 
@@ -277,6 +281,8 @@ export function GroupEditor({
     const [sessionKeepTime, setSessionKeepTime] = useState<number>(initial?.session_keep_time ?? 0);
     const [retryEnabled, setRetryEnabled] = useState<boolean>(initial?.retry_enabled ?? false);
     const [maxRetries, setMaxRetries] = useState<number>(initial?.max_retries ?? 3);
+    const [protocolMode, setProtocolMode] = useState<GroupProtocolMode>(normalizeGroupProtocolMode(initial?.protocol_mode));
+    const [preferredProtocols, setPreferredProtocols] = useState<ProtocolName[]>(normalizePreferredProtocols(initial?.preferred_protocols));
     const [selectedMembers, setSelectedMembers] = useState<SelectedMember[]>(initial?.members ?? []);
     const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
 
@@ -362,6 +368,8 @@ export function GroupEditor({
             session_keep_time: sessionKeepTime,
             retry_enabled: retryEnabled,
             max_retries: maxRetries,
+            protocol_mode: protocolMode,
+            preferred_protocols: preferredProtocols,
             members: selectedMembers,
         });
     };
@@ -528,6 +536,14 @@ export function GroupEditor({
                             </TooltipProvider>
                         )}
                     </div>
+
+
+                    <ProtocolPolicySection
+                        mode={protocolMode}
+                        preferredProtocols={preferredProtocols}
+                        onModeChange={setProtocolMode}
+                        onPreferredChange={setPreferredProtocols}
+                    />
 
                     <div className="flex-1 min-h-0">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 h-full min-h-0">

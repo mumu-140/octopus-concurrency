@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { Pencil, Route, Trash2 } from 'lucide-react';
+import { Pencil, Trash2 } from 'lucide-react';
 import {
     channelProtocolLabel,
     type Channel,
@@ -23,7 +23,6 @@ import { ChannelForm, type ChannelFormData } from './Form';
 import { ChannelFailureHistory } from './ChannelFailureHistory';
 import { ChannelOverview } from './ChannelOverview';
 import { useJumpStore } from '@/stores/jump';
-import { ChannelPolicyPanel } from '@/components/modules/protocol-routing/ChannelPolicyPanel';
 
 export function CardContent({ channel, stats }: { channel: Channel; stats: StatsMetricsFormatted }) {
     const { setIsOpen, isOpen } = useMorphingDialog();
@@ -31,7 +30,6 @@ export function CardContent({ channel, stats }: { channel: Channel; stats: Stats
     const deleteChannel = useDeleteChannel();
     const requestJump = useJumpStore((state) => state.requestJump);
     const [isEditing, setIsEditing] = useState(false);
-    const [isProtocolEditing, setIsProtocolEditing] = useState(false);
     const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
     const [formData, setFormData] = useState<ChannelFormData>({
         name: channel.name,
@@ -64,7 +62,7 @@ export function CardContent({ channel, stats }: { channel: Channel; stats: Stats
     });
     const t = useTranslations('channel.detail');
     const tProxy = useTranslations('proxyPool');
-    const currentView = isProtocolEditing ? 'protocol' : isEditing ? 'editing' : 'viewing';
+    const currentView = isEditing ? 'editing' : 'viewing';
 
     const baseURLsEqual = (left: Channel['base_urls'] | undefined, right: Channel['base_urls'] | undefined) =>
         JSON.stringify(left ?? []) === JSON.stringify(right ?? []);
@@ -191,14 +189,10 @@ export function CardContent({ channel, stats }: { channel: Channel; stats: Stats
                             </div>
 
                             {!channel.managed ? (
-                                <div className="mt-4 grid gap-2 border-t border-border/70 pt-3 sm:grid-cols-3">
+                                <div className="mt-4 grid gap-2 border-t border-border/70 pt-3 sm:grid-cols-2">
                                     <Button type="button" variant="default" className="h-10 rounded-xl" onClick={() => setIsEditing(true)}>
                                         <Pencil className="size-4" />
                                         {t('actions.edit')}
-                                    </Button>
-                                    <Button type="button" variant="outline" className="h-10 rounded-xl" onClick={() => setIsProtocolEditing(true)}>
-                                        <Route className="size-4" />
-                                        协议策略
                                     </Button>
                                     <Button type="button" variant={isConfirmingDelete ? 'destructive' : 'outline'} disabled={deleteChannel.isPending} className="h-10 rounded-xl" onClick={handleDelete}>
                                         <Trash2 className="size-4" />
@@ -222,9 +216,6 @@ export function CardContent({ channel, stats }: { channel: Channel; stats: Stats
                             />
                         </TabsContent>
 
-                        <TabsContent value="protocol">
-                            <ChannelPolicyPanel channelId={channel.id} channelKeys={channel.keys} onBack={() => setIsProtocolEditing(false)} />
-                        </TabsContent>
                     </TabsContents>
                 </Tabs>
             </MorphingDialogDescription>

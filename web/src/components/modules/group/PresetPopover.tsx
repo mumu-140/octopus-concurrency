@@ -43,7 +43,6 @@ import {
     MorphingDialogContent,
     MorphingDialogTrigger,
 } from '@/components/ui/morphing-dialog';
-import { ScopedPolicyDialog } from '@/components/modules/protocol-routing/ScopedPolicyDialog';
 
 interface PresetPopoverProps {
     group: Group;
@@ -302,7 +301,6 @@ export function PresetPopover({ group }: PresetPopoverProps) {
                                         </button>
 
                                         <div className="flex items-center gap-0.5 opacity-0 group-hover/preset:opacity-100 transition-opacity">
-                                            <ScopedPolicyDialog kind="group-presets" id={preset.id} name={preset.name} compact />
                                             <MorphingDialog key={`preset-edit-${preset.id}`}>
                                                 <MorphingDialogTrigger
                                                     aria-label={t('preset.edit')}
