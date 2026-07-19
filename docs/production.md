@@ -92,3 +92,13 @@ codex/v0.10.1-image-api 包含尚未发布的协议路由工作；未完成独�
 
 GitHub 私有仓库当前套餐不支持服务端 branch protection。服务器规范源码仓库必须运行
 `scripts/install-git-hooks.sh` 安装版本化 pre-push guard；任何新克隆也必须先安装。
+
+
+## 2026-07-19 v0.10.2-mumu.7 item_reference passthrough
+
+- Issue: outbound Responses path synthesized `function_call_output.item_reference`, rejected by gateways such as Anyrouter (`unknown_parameter`).
+- Fix commit: `2125315` — leave `item_reference` exactly as client-sent; keep typed item ID normalization.
+- Image/tag: `mumu-140/octopus-concurrency:v0.10.2-mumu.7` / annotated tag `v0.10.2-mumu.7`.
+- Candidate: `:35287` on DB copy; chat + responses smoke OK.
+- Production cutover snapshot: `/home/yangs/API/octopus/backups/pre-v0.10.2-mumu.7-cutover-20260719-081850/`.
+- Rollback container: `octopus-mumu6-rollback-20260719-081850` (`v0.10.2-mumu.6`).
