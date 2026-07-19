@@ -67,7 +67,7 @@
   `web/pnpm-workspace.yaml`，Dockerfile 必须在安装前复制该文件。
 - 默认使用已提交的价格数据。只有显式设置 `UPDATE_PRICE_DATA=1` 才能刷新，
   且刷新结果必须独立审查、提交后再构建。
-- 当前运行 tag `v0.10.1-mumu.1` 指向 `ac56796`，不可用后续构建工具提交重建同名镜像。
+- 当前运行版本、tag、源码提交和容器指纹始终以 `deploy/fwq57ys/production-state.json` 与 `scripts/check-governance.sh --live` 为准；不得依赖规则文件中的历史版本描述。
 - 新发布必须使用新版本和新 tag；GitHub release workflow 只响应 `v*-mumu.*`。
 
 ## 6. 生产与数据边界

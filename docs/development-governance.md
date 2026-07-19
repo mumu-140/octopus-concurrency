@@ -40,9 +40,9 @@ release workflow 和受版本控制的部署声明都在这里修改。
 3. 当前 `main` commit；
 4. 运行镜像 ID / 容器 ID。
 
-当前运行应用源码为 `v0.10.1-mumu.1` / `ac56796`。`main` 在该 tag 之后包含构建和治理
-改动，因此 `main` 更新不代表生产应用已更新。生产状态以
-`deploy/fwq57ys/production-state.json` 为机器真值，并由只读守卫核验。
+运行版本、应用源码提交、当前 `main`、镜像和容器是相互独立的事实。具体值不得
+从本说明中的历史示例推断；生产状态以 `deploy/fwq57ys/production-state.json` 为机器真值，
+并由只读守卫与 Docker inspect 共同核验。`main` 更新不代表生产应用已更新。
 
 ## 分支生命周期
 

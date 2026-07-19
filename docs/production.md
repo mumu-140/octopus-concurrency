@@ -64,6 +64,19 @@ Docker 基础镜像、Dockerfile frontend 与 pnpm 均已固定。镜像构建�
 审查并提交生成的价格差异后，才能构建生产镜像。禁止在生产镜像构建期间
 临时从 models.dev 获取数据。
 
+
+## 分组价格与实际模型别名
+
+价格单位为美元/百万 token。生产环境为每个请求分组维护官方价格，运行时按以下顺序计费：
+
+1. 上游 `actual_model_name` 存在非零价格时，使用实际模型价格；
+2. 实际模型缺失价格或仅有全零占位价格时，回退到客户端请求的分组模型价格；
+3. 请求分组本身明确配置为零价时继续按零计费，不臆造价格。
+
+该规则同时适用于文本、Responses 和图片请求。渠道前缀、thinking/free/console 等实际响应别名
+不再要求逐个写入价格表；分组价格是稳定基准，已有的精确实际模型价格仍保持最高优先级。
+`codex-auto-review` 无公开定价、`sensenova-6.7-flash-lite` 为免费方案，生产配置继续保留零价。
+
 ## 部署
 
 受 Git 管理的生产 compose 是 deploy/fwq57ys/compose.yaml，生产副本是
@@ -79,8 +92,8 @@ Docker 基础镜像、Dockerfile frontend 与 pnpm 均已固定。镜像构建�
 2. 预加载并检查目标镜像；
 3. 比较生产 compose 与受 Git 管理的版本；
 4. 记录当前容器 ID、启动时间、镜像和挂载；
-5. 在维护窗口执行明确的切换；
-6. 验证 HTTP、挂载、数据库完整性和回滚路径。
+5. 把 stop/recreate/start、健康等待和失败回滚写入可独立完成的后台任务，记录日志后脱离当前 API 会话执行；禁止在承载 Codex/Claude/Hermes 的前台 SSH 中直接中断 Octopus；
+6. 通过独立只读连接验证 HTTP、挂载、数据库完整性和回滚路径。
 
 ## 分支
 
