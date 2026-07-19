@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-07-18T18:55:27Z",
+  "updatedAt": "2026-07-19T02:28:19Z",
   "repository": {
     "github": "mumu-140/octopus-concurrency",
     "canonicalPath": "/home/yangs/API/octopus-mumu",
@@ -15,10 +15,10 @@
     "composeReplica": "/home/yangs/API/octopus/docker-compose.yml",
     "container": {
       "name": "octopus",
-      "id": "bdf0d2fef25636edf065cceb919c72939757dcd557ef7c3a5e342f734750b633",
-      "image": "mumu-140/octopus-concurrency:v0.10.2-mumu.3",
-      "imageId": "sha256:b6cacf07359917f8ac2a052c4d4f48ca2c734f247c6bfb615028cd5a199d45dd",
-      "startedAt": "2026-07-18T18:54:19.954771403Z",
+      "id": "0880e14f803a3059352da0717cb1037b4e7a93315d7c49e0bc50fe3528a64802",
+      "image": "mumu-140/octopus-concurrency:v0.10.2-mumu.4",
+      "imageId": "sha256:8bd473e72bebda6b9621a48af07c4a9b6945c181cb4ebc59a259ac91b6aa8df2",
+      "startedAt": "2026-07-19T02:25:53.597618691Z",
       "networkMode": "host",
       "restartCount": 0,
       "dataMount": {
@@ -28,15 +28,15 @@
       }
     },
     "release": {
-      "version": "v0.10.2-mumu.3",
-      "tag": "v0.10.2-mumu.3",
-      "sourceCommit": "ff95c2a71f9b9fa5f34057c4bc1b7ff149b1d5f1"
+      "version": "v0.10.2-mumu.4",
+      "tag": "v0.10.2-mumu.4",
+      "sourceCommit": "1ad7b2eeefeeaf0bf22cc843935f2fecb6aa611c"
     },
     "httpChecks": [
       "http://127.0.0.1:35276/",
       "http://222.28.118.57:35276/"
     ],
-    "rollbackSnapshot": "/home/yangs/API/octopus/backups/pre-v0.10.2-mumu.3-20260718-185301"
+    "rollbackSnapshot": "/home/yangs/API/octopus/backups/pre-v0.10.2-mumu.4-20260719-022550"
   },
   "preservedDirectories": [
     "/home/yangs/API/octopus-src",
