@@ -14,7 +14,7 @@ RUN cd web && pnpm install --frozen-lockfile
 COPY web ./web
 RUN cd web && NEXT_PUBLIC_APP_VERSION="$GIT_VERSION" pnpm run build
 
-FROM golang@sha256:6d06ba5646119bd0717466a70e6618ee6e4888e111be94d22e25ee57d8a6251f AS backend-builder
+FROM docker.1ms.run/library/golang@sha256:2389ebfa5b7f43eeafbd6be0c3700cc46690ef842ad962f6c5bd6be49ed82039 AS backend-builder
 
 ARG GIT_VERSION
 ARG COMMIT_ID
