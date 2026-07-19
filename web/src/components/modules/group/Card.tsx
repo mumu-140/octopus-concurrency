@@ -18,6 +18,7 @@ import { modelChannelKey, MODE_LABELS } from './utils';
 import { GroupMode, type GroupUpdateRequest, normalizeGroupProtocolMode, normalizePreferredProtocols } from '@/api/endpoints/group';
 import { PresetPopover } from './PresetPopover';
 import { ProtocolPolicyPopover } from './ProtocolPolicyPopover';
+import { buildGroupMemberChanges } from './groupMemberDiff';
 import {
     MorphingDialog,
     MorphingDialogClose,
@@ -220,49 +221,10 @@ export function GroupCard({ group }: { group: Group }) {
     const handleSubmitEdit = useCallback((values: GroupEditorValues, onDone?: () => void) => {
         if (!group.id) return;
 
-        const originalItems = [...(group.items || [])].sort((a, b) => a.priority - b.priority);
-        const originalById = new Map<number, { priority: number; weight: number }>();
-        const originalIds = new Set<number>();
-        originalItems.forEach((it) => {
-            if (typeof it.id === 'number') {
-                originalIds.add(it.id);
-                originalById.set(it.id, { priority: it.priority, weight: it.weight });
-            }
-        });
-
-        const newIds = new Set<number>();
-        values.members.forEach((m) => { if (typeof m.item_id === 'number') newIds.add(m.item_id); });
-
-        const items_to_delete = Array.from(originalIds).filter((id) => !newIds.has(id));
-
-        const items_to_add = values.members
-            .map((m, idx) => ({ m, priority: idx + 1 }))
-            .filter(({ m }) => typeof m.item_id !== 'number')
-            .map(({ m, priority }) => ({
-                channel_id: m.channel_id,
-                model_name: m.name,
-                priority,
-                weight: m.weight ?? 1,
-            }))
-            .filter((add) => {
-                // 过滤掉已存在于 group.items 的精确 (channel_id, model_name) 键
-                return !originalItems.some(
-                    (existing) => existing.channel_id === add.channel_id && existing.model_name === add.model_name
-                );
-            });
-
-        const items_to_update = values.members
-            .map((m, idx) => ({ m, priority: idx + 1 }))
-            .filter(({ m }) => typeof m.item_id === 'number')
-            .map(({ m, priority }) => {
-                const id = m.item_id!;
-                const orig = originalById.get(id);
-                const weight = m.weight ?? 1;
-                if (!orig) return null;
-                if (orig.priority === priority && orig.weight === weight) return null;
-                return { id, priority, weight };
-            })
-            .filter((x): x is { id: number; priority: number; weight: number } => x !== null);
+        const { items_to_add, items_to_update, items_to_delete } = buildGroupMemberChanges(
+            group.items || [],
+            values.members,
+        );
 
         const payload: GroupUpdateRequest = { id: group.id };
         const nextName = values.name.trim();

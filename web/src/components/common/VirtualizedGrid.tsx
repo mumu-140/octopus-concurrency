@@ -4,6 +4,7 @@ import {
     type ReactNode,
     useCallback,
     useEffect,
+    useLayoutEffect,
     useMemo,
     useRef,
     useState,
@@ -74,7 +75,7 @@ export function VirtualizedGrid<T>({
     const containerRef = useRef<HTMLDivElement | null>(null);
     const reachEndTriggeredRef = useRef(false);
 
-    useEffect(() => {
+    useLayoutEffect(() => {
         const el = containerRef.current;
         if (!el) return;
 
