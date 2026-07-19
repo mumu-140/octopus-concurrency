@@ -1,10 +1,41 @@
 package relay
 
 import (
+	"math"
 	"testing"
 
 	transformerModel "github.com/bestruirui/octopus/internal/transformer/model"
 )
+
+func assertCost(t *testing.T, label string, got, want float64) {
+	t.Helper()
+	if math.Abs(got-want) > 1e-9 {
+		t.Fatalf("%s: got %f want %f", label, got, want)
+	}
+}
+
+// 上游返回渠道别名且该别名没有价格时，应使用请求分组的官方价格。
+func TestSetInternalResponseFallsBackToRequestModelPrice(t *testing.T) {
+	m := &RelayMetrics{RequestModel: "gpt-4o"}
+	m.SetInternalResponse(&transformerModel.InternalLLMResponse{
+		Usage: &transformerModel.Usage{PromptTokens: 1_000_000, CompletionTokens: 1_000_000},
+	}, "provider/generated-model-alias")
+
+	assertCost(t, "input cost", m.Stats.InputCost, 2.5)
+	assertCost(t, "output cost", m.Stats.OutputCost, 10)
+}
+
+// 图片请求与文本请求使用相同的分组价格回退规则。
+func TestImagesUsageFallsBackToRequestModelPrice(t *testing.T) {
+	m := newImagesRelayMetrics(0, "gpt-4o")
+	m.SetUsageFromImages("provider/generated-model-alias", imagesUsage{
+		InputTokens:  1_000_000,
+		OutputTokens: 1_000_000,
+	})
+
+	assertCost(t, "image input cost", m.Stats.InputCost, 2.5)
+	assertCost(t, "image output cost", m.Stats.OutputCost, 10)
+}
 
 // usage 完全缺失时，应使用 TransportInputTokens 兜底填充 input，output 保持 0。
 func TestSetInternalResponseFallbackWhenUsageMissing(t *testing.T) {

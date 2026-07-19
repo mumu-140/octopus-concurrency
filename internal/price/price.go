@@ -98,3 +98,22 @@ func GetLLMPrice(modelName string) *model.LLMPrice {
 	}
 	return &price
 }
+
+// ResolveLLMPrice prefers a priced upstream model and falls back to the
+// requested group model when the upstream reports an unpriced alias.
+func ResolveLLMPrice(actualModel, requestModel string) *model.LLMPrice {
+	actualPrice := GetLLMPrice(actualModel)
+	if hasNonZeroPrice(actualPrice) {
+		return actualPrice
+	}
+	if !strings.EqualFold(strings.TrimSpace(actualModel), strings.TrimSpace(requestModel)) {
+		if requestPrice := GetLLMPrice(requestModel); requestPrice != nil {
+			return requestPrice
+		}
+	}
+	return actualPrice
+}
+
+func hasNonZeroPrice(price *model.LLMPrice) bool {
+	return price != nil && (price.Input != 0 || price.Output != 0 || price.CacheRead != 0 || price.CacheWrite != 0)
+}

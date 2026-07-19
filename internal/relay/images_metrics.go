@@ -52,7 +52,7 @@ func (m *imagesRelayMetrics) SetUsageFromImages(actualModel string, u imagesUsag
 	m.Stats.InputToken = int64(u.InputTokens)
 	m.Stats.OutputToken = int64(u.OutputTokens)
 
-	modelPrice := price.GetLLMPrice(actualModel)
+	modelPrice := price.ResolveLLMPrice(actualModel, m.RequestModel)
 	if modelPrice == nil {
 		return
 	}
