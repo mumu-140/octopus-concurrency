@@ -22,20 +22,20 @@ fwq57ys 上唯一可编辑的二开源码仓库是
 /home/yangs/API/octopus-mumu/。生产数据和 compose 位于
 /home/yangs/API/octopus/，该目录不是源码仓库。
 
-2026-07-16 核验的运行版本如下：
+2026-07-20 核验的运行版本如下：
 
 | 项目 | 值 |
 | --- | --- |
-| 版本 | v0.10.1-mumu.1 |
-| 源码提交 | ac5679612d498dd2e31511bcbada33287719414e |
-| 镜像 | mumu-140/octopus-concurrency:v0.10.1-mumu.1 |
-| 镜像 ID | sha256:178121589e353954c217b31817120e721828590df0f7bc7bb1f0efe27c18d8f3 |
+| 版本 | v0.10.2-mumu.9 |
+| 源码提交 | ee01f2af8c6856d275421bd9bd9aca2180f57d93 |
+| 镜像 | mumu-140/octopus-concurrency:v0.10.2-mumu.9 |
+| 镜像 ID | sha256:b21cb2b9806307d34997d3756c8ba896758eab512e7e3403f5ec8fff0de8836f |
+| 容器 ID | 7acd6c3da5522b896860b75047c7b1dc80057d006d5f6c9f0002d28b8ee9001a |
 | 数据挂载 | /home/yangs/API/octopus/data:/app/data |
 | 网络 | host，0.0.0.0:35276 |
 
-发布 tag 精确指向运行镜像对应的应用源码提交。构建工具在该 tag 之后
-规范化，因此该历史镜像应从已验证的镜像归档恢复，不得用同名 tag
-重新构建并覆盖。
+发布 tag 精确指向运行镜像对应的应用源码提交。运行容器、受管 Compose、生产副本和
+`production-state.json` 必须保持一致；旧 tag 和旧镜像不得重建、覆盖或移动。
 
 ## 恢复快照
 
@@ -70,7 +70,7 @@ Docker 基础镜像、Dockerfile frontend 与 pnpm 均已固定。镜像构建�
 
 - `.8` 首次包含分组价格回退修复，候选验证通过，但 GitHub 发布阶段发现固定的 Go 基础镜像摘要已从 Docker Hub 撤下；该 tag 保留为失败发布证据，从未部署生产。
 - `.9` 保持完全相同的价格业务代码，只把 Go 1.26.1 Alpine 基础镜像改为经镜像索引重新验证的固定摘要；本地无缓存解析、完整镜像构建和候选冒烟均通过。
-- 正式部署目标是 `.9`；不得部署或复用 `.8` 镜像/tag。
+- `.9` 已通过后台任务切换生产；快照为 `/home/yangs/API/octopus/backups/pre-v0.10.2-mumu.9-cutover-20260719-221914/`，回滚容器为 `octopus-mumu7-rollback-20260719-221914`。不得部署或复用 `.8` 镜像/tag。
 
 ## 分组价格与实际模型别名
 
@@ -89,9 +89,9 @@ Docker 基础镜像、Dockerfile frontend 与 pnpm 均已固定。镜像构建�
 受 Git 管理的生产 compose 是 deploy/fwq57ys/compose.yaml，生产副本是
 /home/yangs/API/octopus/docker-compose.yml。
 
-当前容器在本次规范化前以手工方式创建。更新 compose 文本不会接管或
-重建该容器。转换为 compose 管理必然需要 Docker 重建容器，只能在明确
-批准的维护窗口内执行。
+`.9` 起生产容器由 `/home/yangs/API/octopus/docker-compose.yml` 管理，Docker Compose
+标签明确记录工作目录和配置文件。受管 Compose 与生产副本不一致时不得执行生命周期操作；
+所有后续切换仍只能在明确批准的维护窗口内通过后台任务执行。
 
 文档或纯源码变更不得运行 docker compose 生命周期命令。获批发布前必须：
 
