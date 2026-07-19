@@ -598,8 +598,9 @@ func TestTransformRequestRawNormalizesLegacyItemIDs(t *testing.T) {
 			t.Errorf("input[%d].id = %q, want %q", index, got, want)
 		}
 	}
-	if got := payload.Input[3]["item_reference"]; got != "fc_function" {
-		t.Errorf("item_reference = %#v, want fc_function", got)
+	if got, ok := payload.Input[3]["item_reference"]; !ok || got != "item_function" {
+		// Client-provided item_reference is passed through without rewrite.
+		t.Errorf("item_reference = %#v ok=%v, want original client value item_function", got, ok)
 	}
 	if got := payload.Input[2]["call_id"]; got != "call_1" {
 		t.Errorf("call_id = %#v, want call_1", got)

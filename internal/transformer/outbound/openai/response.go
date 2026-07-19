@@ -1236,20 +1236,14 @@ func convertToolMessageToResponses(msg model.Message, callIDToItemID map[string]
 		output.Text = lo.ToPtr("")
 	}
 
-	item := ResponsesItem{
+	// item_reference is client-owned. Octopus must not synthesize it for
+	// Chat→Responses conversion; many gateways reject the unknown field.
+	_ = callIDToItemID
+	return ResponsesItem{
 		Type:   "function_call_output",
 		CallID: lo.FromPtr(msg.ToolCallID),
 		Output: &output,
 	}
-
-	// Set item_reference to the corresponding function_call's ID
-	if msg.ToolCallID != nil {
-		if itemID, ok := callIDToItemID[*msg.ToolCallID]; ok {
-			item.ItemReference = lo.ToPtr(itemID)
-		}
-	}
-
-	return item
 }
 
 func convertToolsToResponses(tools []model.Tool) []ResponsesTool {
@@ -1649,22 +1643,16 @@ func sanitizeResponsesItems(items []ResponsesItem) []ResponsesItem {
 		return items
 	}
 
-	legacyIDs := make(map[string]string)
+	// Normalize typed item IDs only. ItemReference stays exactly as provided;
+	// Octopus must neither invent nor rewrite item_reference.
 	sanitized := make([]ResponsesItem, len(items))
 	for i, item := range items {
 		sanitized[i] = item
 		if normalizedID, ok := openaiutil.NormalizeLegacyItemID(item.Type, item.ID); ok {
-			legacyIDs[item.ID] = normalizedID
 			sanitized[i].ID = normalizedID
 		}
 		if item.Type == "function_call" && sanitized[i].ID == "" {
 			sanitized[i].ID = openaiutil.NewItemID("function_call")
-		}
-	}
-
-	for i, item := range items {
-		if normalizedReference, ok := legacyIDs[lo.FromPtr(item.ItemReference)]; ok {
-			sanitized[i].ItemReference = lo.ToPtr(normalizedReference)
 		}
 		ensureResponsesReasoningSummary(&sanitized[i])
 		ensureResponsesRefusalShape(&sanitized[i])
@@ -1718,12 +1706,12 @@ func sanitizeResponsesRawItems(raw json.RawMessage) json.RawMessage {
 	}
 
 	changed := false
-	legacyIDs := make(map[string]string)
+	// Normalize typed item IDs and backfill missing function_call.id only.
+	// item_reference is left exactly as the client sent it (present or absent).
 	for _, item := range items {
 		itemType := decodeRawString(item["type"])
 		oldID := decodeRawString(item["id"])
 		if normalizedID, ok := openaiutil.NormalizeLegacyItemID(itemType, oldID); ok {
-			legacyIDs[oldID] = normalizedID
 			if b, err := json.Marshal(normalizedID); err == nil {
 				item["id"] = b
 				changed = true
@@ -1731,59 +1719,25 @@ func sanitizeResponsesRawItems(raw json.RawMessage) json.RawMessage {
 		}
 	}
 
-	// Build call_id -> item_id mapping from function_call items.
-	// Generate an id for any function_call that has call_id but no id,
-	// so the function_call_output backfill can always resolve item_reference.
-	callIDToItemID := make(map[string]string)
 	for _, item := range items {
-		if decodeRawString(item["type"]) == "function_call" {
-			callID := decodeRawString(item["call_id"])
-			if callID == "" {
-				continue
-			}
-			itemID := decodeRawString(item["id"])
-			if itemID == "" {
-				itemID = openaiutil.NewItemID("function_call")
-				if b, err := json.Marshal(itemID); err == nil {
-					item["id"] = b
-					changed = true
-				}
-			}
-			if itemID != "" {
-				callIDToItemID[callID] = itemID
-			}
+		if decodeRawString(item["type"]) != "function_call" {
+			continue
+		}
+		if decodeRawString(item["call_id"]) == "" {
+			continue
+		}
+		if decodeRawString(item["id"]) != "" {
+			continue
+		}
+		itemID := openaiutil.NewItemID("function_call")
+		if b, err := json.Marshal(itemID); err == nil {
+			item["id"] = b
+			changed = true
 		}
 	}
 
 	for _, item := range items {
 		itemType := decodeRawString(item["type"])
-
-		// Sanitize function_call_output: add missing item_reference
-		if itemType == "function_call_output" {
-			if reference := decodeRawString(item["item_reference"]); reference != "" {
-				if normalizedReference, ok := legacyIDs[reference]; ok {
-					if b, err := json.Marshal(normalizedReference); err == nil {
-						item["item_reference"] = b
-						changed = true
-					}
-				}
-			}
-			refRaw, hasRef := item["item_reference"]
-			refMissing := !hasRef || len(bytes.TrimSpace(refRaw)) == 0 ||
-				bytes.Equal(bytes.TrimSpace(refRaw), []byte("null")) ||
-				bytes.Equal(bytes.TrimSpace(refRaw), []byte(`""`))
-			if refMissing {
-				callID := decodeRawString(item["call_id"])
-				if callID != "" {
-					if itemID, ok := callIDToItemID[callID]; ok {
-						if b, err := json.Marshal(itemID); err == nil {
-							item["item_reference"] = b
-							changed = true
-						}
-					}
-				}
-			}
-		}
 
 		if itemType != "reasoning" {
 			continue
