@@ -17,6 +17,7 @@ import { GroupHealthBadge } from './health';
 import { modelChannelKey, MODE_LABELS } from './utils';
 import { GroupMode, type GroupUpdateRequest, normalizeGroupProtocolMode, normalizePreferredProtocols } from '@/api/endpoints/group';
 import { PresetPopover } from './PresetPopover';
+import { ProtocolPolicyPopover } from './ProtocolPolicyPopover';
 import {
     MorphingDialog,
     MorphingDialogClose,
@@ -324,6 +325,8 @@ export function GroupCard({ group }: { group: Group }) {
                     </Tooltip>
 
                     <PresetPopover group={group} />
+
+                    <ProtocolPolicyPopover group={group} />
 
                                         <MorphingDialog>
                         <MorphingDialogTrigger className="p-1.5 rounded-lg transition-colors hover:bg-muted text-muted-foreground hover:text-foreground">

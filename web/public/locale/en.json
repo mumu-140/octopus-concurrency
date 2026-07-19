@@ -667,7 +667,8 @@
         "auto": "Try the channel default first; fall back to {list} on clear mismatch."
       },
       "expand": "Expand protocol settings",
-      "collapse": "Collapse protocol settings"
+      "collapse": "Collapse protocol settings",
+      "quickEdit": "Protocol settings"
     }
   },
   "model": {

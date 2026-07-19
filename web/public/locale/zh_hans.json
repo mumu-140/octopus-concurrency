@@ -667,7 +667,8 @@
         "auto": "渠道默认协议优先；明确不匹配时回退 {list}。"
       },
       "expand": "展开协议设置",
-      "collapse": "收起协议设置"
+      "collapse": "收起协议设置",
+      "quickEdit": "协议设置"
     }
   },
   "model": {

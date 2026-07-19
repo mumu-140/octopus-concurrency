@@ -667,7 +667,8 @@
         "auto": "渠道預設協議優先；明確不匹配時回退 {list}。"
       },
       "expand": "展開協議設定",
-      "collapse": "收起協議設定"
+      "collapse": "收起協議設定",
+      "quickEdit": "協議設定"
     }
   },
   "model": {
