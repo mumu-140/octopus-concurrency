@@ -1,6 +1,7 @@
 package openai
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/samber/lo"
@@ -64,6 +65,9 @@ func TestStreamCompletedEventHasNonEmptyOutputWithMessage(t *testing.T) {
 	if first.Type != "message" {
 		t.Fatalf("first output type = %q, want message", first.Type)
 	}
+	if !strings.HasPrefix(first.ID, "msg_") {
+		t.Fatalf("message output id = %q, want msg_ prefix", first.ID)
+	}
 }
 
 func TestStreamCompletedSynthesizesShellWhenEmpty(t *testing.T) {
@@ -110,6 +114,9 @@ func TestStreamCompletedSynthesizesShellWhenEmpty(t *testing.T) {
 	if first.Status == nil || *first.Status != "completed" {
 		t.Fatalf("synthetic status = %v, want completed", first.Status)
 	}
+	if !strings.HasPrefix(first.ID, "msg_") {
+		t.Fatalf("synthetic message id = %q, want msg_ prefix", first.ID)
+	}
 	_ = lo.ToPtr("ignore")
 }
 
@@ -142,5 +149,53 @@ func TestConvertToResponsesAPIResponsePreservesRefusalContent(t *testing.T) {
 	}
 	if out.Status == nil || *out.Status != "failed" {
 		t.Fatalf("expected failed status for refusal stop, got %v", out.Status)
+	}
+}
+
+func TestConvertToResponsesAPIResponseUsesTypeSpecificItemIDs(t *testing.T) {
+	content := "done"
+	reasoning := "thinking"
+	stop := "tool_calls"
+	resp := &model.InternalLLMResponse{
+		ID:    "resp_ids",
+		Model: "gpt-5",
+		Choices: []model.Choice{{
+			Message: &model.Message{
+				Role:             "assistant",
+				ReasoningContent: &reasoning,
+				Content:          model.MessageContent{Content: &content},
+				ToolCalls: []model.ToolCall{{
+					ID:   "call_123",
+					Type: "function",
+					Function: model.FunctionCall{
+						Name:      "lookup",
+						Arguments: `{}`,
+					},
+				}},
+			},
+			FinishReason: &stop,
+		}},
+	}
+
+	out := convertToResponsesAPIResponse(resp)
+	wantPrefixes := map[string]string{
+		"reasoning":     "rs_",
+		"function_call": "fc_",
+		"message":       "msg_",
+	}
+	if len(out.Output) != len(wantPrefixes) {
+		t.Fatalf("output item count = %d, want %d", len(out.Output), len(wantPrefixes))
+	}
+	for _, item := range out.Output {
+		prefix, ok := wantPrefixes[item.Type]
+		if !ok {
+			t.Fatalf("unexpected output item type %q", item.Type)
+		}
+		if !strings.HasPrefix(item.ID, prefix) {
+			t.Errorf("%s id = %q, want %s prefix", item.Type, item.ID, prefix)
+		}
+		if item.Type == "function_call" && item.CallID != "call_123" {
+			t.Errorf("function call_id = %q, want call_123", item.CallID)
+		}
 	}
 }

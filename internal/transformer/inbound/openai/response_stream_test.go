@@ -303,19 +303,21 @@ func TestStreamToolCallArgumentDeltaUsesStoredOutputIndex(t *testing.T) {
 
 	events := feedStream(t, chunks)
 	var firstToolOutputIndex *int
+	var firstToolItemID string
 	for _, event := range events {
 		if event.Type == "response.output_item.added" && event.Item != nil && event.Item.CallID == "call_a" {
 			firstToolOutputIndex = event.OutputIndex
+			firstToolItemID = event.Item.ID
 			break
 		}
 	}
-	if firstToolOutputIndex == nil {
+	if firstToolOutputIndex == nil || firstToolItemID == "" {
 		t.Fatalf("expected output_item.added for call_a; events=%v", eventTypes(events))
 	}
 
 	var lateDelta *ResponsesStreamEvent
 	for i := range events {
-		if events[i].Type == "response.function_call_arguments.delta" && events[i].ItemID != nil && *events[i].ItemID == "call_a" && events[i].Delta == `1}` {
+		if events[i].Type == "response.function_call_arguments.delta" && events[i].ItemID != nil && *events[i].ItemID == firstToolItemID && events[i].Delta == `1}` {
 			lateDelta = &events[i]
 			break
 		}

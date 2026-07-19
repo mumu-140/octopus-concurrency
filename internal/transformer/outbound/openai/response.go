@@ -3,7 +3,6 @@ package openai
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -12,12 +11,11 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"sync/atomic"
-	"time"
 
 	"github.com/samber/lo"
 
 	"github.com/bestruirui/octopus/internal/transformer/model"
+	"github.com/bestruirui/octopus/internal/transformer/openaiutil"
 )
 
 // ResponseOutbound implements the Outbound interface for OpenAI Responses API.
@@ -90,13 +88,11 @@ func (o *ResponseOutbound) TransformRequestRaw(ctx context.Context, rawBody []by
 	if len(rawBody) == 0 {
 		return nil, fmt.Errorf("raw body is empty")
 	}
-	if strings.TrimSpace(modelName) != "" {
-		rewrittenBody, err := rewriteRawResponsesRequestModel(rawBody, modelName)
-		if err != nil {
-			return nil, err
-		}
-		rawBody = rewrittenBody
+	rewrittenBody, err := rewriteRawResponsesRequestModel(rawBody, modelName)
+	if err != nil {
+		return nil, err
 	}
+	rawBody = rewrittenBody
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "", bytes.NewReader(rawBody))
 	if err != nil {
@@ -131,11 +127,33 @@ func (o *ResponseOutbound) TransformRequestRaw(ctx context.Context, rawBody []by
 }
 
 func rewriteRawResponsesRequestModel(rawBody []byte, modelName string) ([]byte, error) {
-	var payload map[string]any
+	var payload map[string]json.RawMessage
 	if err := json.Unmarshal(rawBody, &payload); err != nil {
 		return nil, fmt.Errorf("failed to decode raw responses request: %w", err)
 	}
-	payload["model"] = strings.TrimSpace(modelName)
+
+	changed := false
+	if trimmedModel := strings.TrimSpace(modelName); trimmedModel != "" {
+		modelJSON, err := json.Marshal(trimmedModel)
+		if err != nil {
+			return nil, fmt.Errorf("failed to encode raw responses model: %w", err)
+		}
+		if !bytes.Equal(bytes.TrimSpace(payload["model"]), modelJSON) {
+			payload["model"] = modelJSON
+			changed = true
+		}
+	}
+	if input, ok := payload["input"]; ok {
+		sanitizedInput := sanitizeResponsesRawItems(input)
+		if !bytes.Equal(sanitizedInput, input) {
+			payload["input"] = sanitizedInput
+			changed = true
+		}
+	}
+	if !changed {
+		return rawBody, nil
+	}
+
 	rewrittenBody, err := json.Marshal(payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode raw responses request: %w", err)
@@ -1160,7 +1178,7 @@ func convertAssistantMessageToResponses(msg model.Message) []ResponsesItem {
 	// Handle tool calls
 	for _, tc := range msg.ToolCalls {
 		items = append(items, ResponsesItem{
-			ID:        generateResponsesItemID(),
+			ID:        openaiutil.NewItemID("function_call"),
 			Type:      "function_call",
 			CallID:    tc.ID,
 			Name:      tc.Function.Name,
@@ -1631,9 +1649,23 @@ func sanitizeResponsesItems(items []ResponsesItem) []ResponsesItem {
 		return items
 	}
 
+	legacyIDs := make(map[string]string)
 	sanitized := make([]ResponsesItem, len(items))
 	for i, item := range items {
 		sanitized[i] = item
+		if normalizedID, ok := openaiutil.NormalizeLegacyItemID(item.Type, item.ID); ok {
+			legacyIDs[item.ID] = normalizedID
+			sanitized[i].ID = normalizedID
+		}
+		if item.Type == "function_call" && sanitized[i].ID == "" {
+			sanitized[i].ID = openaiutil.NewItemID("function_call")
+		}
+	}
+
+	for i, item := range items {
+		if normalizedReference, ok := legacyIDs[lo.FromPtr(item.ItemReference)]; ok {
+			sanitized[i].ItemReference = lo.ToPtr(normalizedReference)
+		}
 		ensureResponsesReasoningSummary(&sanitized[i])
 		ensureResponsesRefusalShape(&sanitized[i])
 	}
@@ -1686,6 +1718,18 @@ func sanitizeResponsesRawItems(raw json.RawMessage) json.RawMessage {
 	}
 
 	changed := false
+	legacyIDs := make(map[string]string)
+	for _, item := range items {
+		itemType := decodeRawString(item["type"])
+		oldID := decodeRawString(item["id"])
+		if normalizedID, ok := openaiutil.NormalizeLegacyItemID(itemType, oldID); ok {
+			legacyIDs[oldID] = normalizedID
+			if b, err := json.Marshal(normalizedID); err == nil {
+				item["id"] = b
+				changed = true
+			}
+		}
+	}
 
 	// Build call_id -> item_id mapping from function_call items.
 	// Generate an id for any function_call that has call_id but no id,
@@ -1699,7 +1743,7 @@ func sanitizeResponsesRawItems(raw json.RawMessage) json.RawMessage {
 			}
 			itemID := decodeRawString(item["id"])
 			if itemID == "" {
-				itemID = generateResponsesItemID()
+				itemID = openaiutil.NewItemID("function_call")
 				if b, err := json.Marshal(itemID); err == nil {
 					item["id"] = b
 					changed = true
@@ -1716,6 +1760,14 @@ func sanitizeResponsesRawItems(raw json.RawMessage) json.RawMessage {
 
 		// Sanitize function_call_output: add missing item_reference
 		if itemType == "function_call_output" {
+			if reference := decodeRawString(item["item_reference"]); reference != "" {
+				if normalizedReference, ok := legacyIDs[reference]; ok {
+					if b, err := json.Marshal(normalizedReference); err == nil {
+						item["item_reference"] = b
+						changed = true
+					}
+				}
+			}
 			refRaw, hasRef := item["item_reference"]
 			refMissing := !hasRef || len(bytes.TrimSpace(refRaw)) == 0 ||
 				bytes.Equal(bytes.TrimSpace(refRaw), []byte("null")) ||
@@ -1934,20 +1986,3 @@ func (o *ResponseOutbound) PassthroughConfig() model.PassthroughConfig {
 		CollectMetrics: false, // OpenAI Responses uses different metrics semantics
 	}
 }
-
-// generateResponsesItemID generates a unique ID for Responses API items (function_call, etc.).
-// Format matches OpenAI's pattern: item_<random_base62_string>
-func generateResponsesItemID() string {
-	b := make([]byte, 24)
-	if _, err := rand.Read(b); err != nil {
-		// fallback: use timestamp + counter
-		return fmt.Sprintf("item_%016x%08x", time.Now().UnixNano(), itemIDCounter.Add(1))
-	}
-	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	for i := range b {
-		b[i] = charset[b[i]%byte(len(charset))]
-	}
-	return "item_" + string(b)
-}
-
-var itemIDCounter atomic.Uint64

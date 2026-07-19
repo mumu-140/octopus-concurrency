@@ -9,6 +9,7 @@ import (
 	"github.com/samber/lo"
 
 	"github.com/bestruirui/octopus/internal/transformer/model"
+	"github.com/bestruirui/octopus/internal/transformer/openaiutil"
 	"github.com/bestruirui/octopus/internal/utils/xurl"
 )
 
@@ -55,6 +56,7 @@ type ResponseInbound struct {
 	toolCalls           map[int]*model.ToolCall
 	toolCallItemStarted map[int]bool
 	toolCallOutputIndex map[int]int
+	toolCallItemIDs     map[int]string
 
 	// Usage tracking
 	usage *model.Usage
@@ -141,8 +143,15 @@ func (i *ResponseInbound) processStreamEvents(ctx context.Context, events []mode
 	// Initialize tool call tracking maps if needed
 	if i.toolCalls == nil {
 		i.toolCalls = make(map[int]*model.ToolCall)
+	}
+	if i.toolCallItemStarted == nil {
 		i.toolCallItemStarted = make(map[int]bool)
+	}
+	if i.toolCallOutputIndex == nil {
 		i.toolCallOutputIndex = make(map[int]int)
+	}
+	if i.toolCallItemIDs == nil {
+		i.toolCallItemIDs = make(map[int]string)
 	}
 
 	for _, event := range events {
@@ -333,7 +342,7 @@ func (i *ResponseInbound) ensureReasoningItemStarted() [][]byte {
 	events = append(events, i.closeCurrentOutputItem()...)
 
 	i.hasReasoningItemStarted = true
-	i.currentItemID = generateItemID()
+	i.currentItemID = openaiutil.NewItemID("reasoning")
 
 	item := &ResponsesItem{
 		ID:      i.currentItemID,
@@ -375,7 +384,7 @@ func (i *ResponseInbound) handleTextContent(content *string) [][]byte {
 	// Start message output item if not started
 	if !i.hasMessageItemStarted {
 		i.hasMessageItemStarted = true
-		i.currentItemID = generateItemID()
+		i.currentItemID = openaiutil.NewItemID("message")
 
 		events = append(events, i.enqueueEvent(&ResponsesStreamEvent{
 			Type:        "response.output_item.added",
@@ -443,7 +452,7 @@ func (i *ResponseInbound) handleRefusalContent(content string) [][]byte {
 	// Start message output item if not started
 	if !i.hasMessageItemStarted {
 		i.hasMessageItemStarted = true
-		i.currentItemID = generateItemID()
+		i.currentItemID = openaiutil.NewItemID("message")
 
 		events = append(events, i.enqueueEvent(&ResponsesStreamEvent{
 			Type:        "response.output_item.added",
@@ -521,10 +530,8 @@ func (i *ResponseInbound) handleToolCalls(toolCalls []model.ToolCall) [][]byte {
 				},
 			}
 
-			itemID := tc.ID
-			if itemID == "" {
-				itemID = generateItemID()
-			}
+			itemID := openaiutil.NewItemID("function_call")
+			i.toolCallItemIDs[toolCallIndex] = itemID
 
 			item := &ResponsesItem{
 				ID:     itemID,
@@ -551,9 +558,10 @@ func (i *ResponseInbound) handleToolCalls(toolCalls []model.ToolCall) [][]byte {
 
 		// Emit function_call_arguments.delta
 		if tc.Function.Arguments != "" {
-			itemID := i.toolCalls[toolCallIndex].ID
+			itemID := i.toolCallItemIDs[toolCallIndex]
 			if itemID == "" {
-				itemID = i.currentItemID
+				itemID = openaiutil.NewItemID("function_call")
+				i.toolCallItemIDs[toolCallIndex] = itemID
 			}
 
 			events = append(events, i.enqueueEvent(&ResponsesStreamEvent{
@@ -792,9 +800,10 @@ func (i *ResponseInbound) closeCurrentOutputItem() [][]byte {
 	// Close any open tool call items
 	for idx, tc := range i.toolCalls {
 		if i.toolCallItemStarted[idx] {
-			itemID := tc.ID
+			itemID := i.toolCallItemIDs[idx]
 			if itemID == "" {
-				itemID = i.currentItemID
+				itemID = openaiutil.NewItemID("function_call")
+				i.toolCallItemIDs[idx] = itemID
 			}
 
 			// Emit function_call_arguments.done
@@ -842,7 +851,7 @@ func (i *ResponseInbound) finalOutputItems() []ResponsesItem {
 	emptyText := ""
 	return []ResponsesItem{
 		{
-			ID:   generateItemID(),
+			ID:   openaiutil.NewItemID("message"),
 			Type: "message",
 			Role: "assistant",
 			Content: &ResponsesInput{
@@ -1629,7 +1638,7 @@ func convertToResponsesAPIResponse(resp *model.InternalLLMResponse) *ResponsesRe
 		// Handle reasoning content
 		if message.ReasoningContent != nil && *message.ReasoningContent != "" {
 			result.Output = append(result.Output, ResponsesItem{
-				ID:     generateItemID(),
+				ID:     openaiutil.NewItemID("reasoning"),
 				Type:   "reasoning",
 				Status: lo.ToPtr("completed"),
 				Summary: []ResponsesReasoningSummary{
@@ -1645,7 +1654,7 @@ func convertToResponsesAPIResponse(resp *model.InternalLLMResponse) *ResponsesRe
 		if len(message.ToolCalls) > 0 {
 			for _, toolCall := range message.ToolCalls {
 				result.Output = append(result.Output, ResponsesItem{
-					ID:        toolCall.ID,
+					ID:        openaiutil.NewItemID("function_call"),
 					Type:      "function_call",
 					CallID:    toolCall.ID,
 					Name:      toolCall.Function.Name,
@@ -1680,7 +1689,7 @@ func convertToResponsesAPIResponse(resp *model.InternalLLMResponse) *ResponsesRe
 				case "image_url":
 					if part.ImageURL != nil {
 						result.Output = append(result.Output, ResponsesItem{
-							ID:     generateItemID(),
+							ID:     openaiutil.NewItemID("image_generation_call"),
 							Type:   "image_generation_call",
 							Role:   "assistant",
 							Result: lo.ToPtr(xurl.ExtractBase64FromDataURL(part.ImageURL.URL)),
@@ -1701,7 +1710,7 @@ func convertToResponsesAPIResponse(resp *model.InternalLLMResponse) *ResponsesRe
 
 		if len(contentItems) > 0 {
 			result.Output = append(result.Output, ResponsesItem{
-				ID:      generateItemID(),
+				ID:      openaiutil.NewItemID("message"),
 				Type:    "message",
 				Role:    "assistant",
 				Content: &ResponsesInput{Items: contentItems},
@@ -1721,7 +1730,7 @@ func convertToResponsesAPIResponse(resp *model.InternalLLMResponse) *ResponsesRe
 		emptyText := ""
 		result.Output = []ResponsesItem{
 			{
-				ID:   generateItemID(),
+				ID:   openaiutil.NewItemID("message"),
 				Type: "message",
 				Role: "assistant",
 				Content: &ResponsesInput{
@@ -1774,10 +1783,6 @@ func convertUsageToResponses(usage *model.Usage) *ResponsesUsage {
 	}
 
 	return result
-}
-
-func generateItemID() string {
-	return fmt.Sprintf("item_%s", lo.RandomString(16, lo.AlphanumericCharset))
 }
 
 // validateReasoningEffort whitelists the values OpenAI's Responses API

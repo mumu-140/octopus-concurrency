@@ -2,6 +2,7 @@ package openai
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/bestruirui/octopus/internal/transformer/model"
@@ -46,6 +47,9 @@ func TestConvertInputFromMessagesGeneratesFunctionCallIDAndItemReference(t *test
 	}
 	if functionCall.ID == "" {
 		t.Error("function_call item missing ID")
+	}
+	if !strings.HasPrefix(functionCall.ID, "fc_") {
+		t.Errorf("function_call id = %q, want fc_ prefix", functionCall.ID)
 	}
 	if functionCall.CallID != "call_abc123" {
 		t.Errorf("expected call_id=call_abc123, got %s", functionCall.CallID)
@@ -102,8 +106,8 @@ func TestSanitizeResponsesRawItemsAddsItemReference(t *testing.T) {
 	if !ok {
 		t.Fatal("function_call_output missing item_reference after sanitization")
 	}
-	if itemRef != "item_xyz789" {
-		t.Errorf("expected item_reference=item_xyz789, got %s", itemRef)
+	if itemRef != "fc_xyz789" {
+		t.Errorf("expected item_reference=fc_xyz789, got %s", itemRef)
 	}
 }
 
@@ -129,8 +133,8 @@ func TestSanitizeResponsesRawItemsFixesNullItemReference(t *testing.T) {
 				t.Fatalf("unmarshal: %v", err)
 			}
 			ref, ok := items[1]["item_reference"].(string)
-			if !ok || ref != "item_xyz" {
-				t.Errorf("expected item_reference=item_xyz, got %v", items[1]["item_reference"])
+			if !ok || ref != "fc_xyz" {
+				t.Errorf("expected item_reference=fc_xyz, got %v", items[1]["item_reference"])
 			}
 		})
 	}
@@ -161,6 +165,9 @@ func TestSanitizeResponsesRawItemsBackfillsMissingFunctionCallID(t *testing.T) {
 	generatedID, ok := items[0]["id"].(string)
 	if !ok || generatedID == "" {
 		t.Fatal("function_call missing generated id")
+	}
+	if !strings.HasPrefix(generatedID, "fc_") {
+		t.Errorf("generated function_call id = %q, want fc_ prefix", generatedID)
 	}
 
 	ref, ok := items[1]["item_reference"].(string)

@@ -552,6 +552,60 @@ func TestTransformRequestRawRewritesModel(t *testing.T) {
 	}
 }
 
+func TestTransformRequestRawNormalizesLegacyItemIDs(t *testing.T) {
+	outbound := &ResponseOutbound{}
+	raw := []byte(`{
+		"model":"old-model",
+		"input":[
+			{"type":"reasoning","id":"item_reasoning","summary":[]},
+			{"type":"message","id":"item_message","role":"assistant","content":[]},
+			{"type":"function_call","id":"item_function","call_id":"call_1","name":"lookup","arguments":"{}"},
+			{"type":"function_call_output","call_id":"call_1","item_reference":"item_function","output":"ok"},
+			{"type":"vendor_extension","id":"item_vendor"}
+		]
+	}`)
+	req, err := outbound.TransformRequestRaw(
+		context.Background(),
+		raw,
+		"new-model",
+		"https://example.com/v1",
+		"test-key",
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("TransformRequestRaw() error = %v", err)
+	}
+
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		t.Fatalf("read request body failed: %v", err)
+	}
+	var payload struct {
+		Model string           `json:"model"`
+		Input []map[string]any `json:"input"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatalf("unmarshal request body failed: %v", err)
+	}
+	if payload.Model != "new-model" {
+		t.Fatalf("model = %q, want new-model", payload.Model)
+	}
+
+	wantIDs := []string{"rs_reasoning", "msg_message", "fc_function", "", "item_vendor"}
+	for index, want := range wantIDs {
+		got, _ := payload.Input[index]["id"].(string)
+		if got != want {
+			t.Errorf("input[%d].id = %q, want %q", index, got, want)
+		}
+	}
+	if got := payload.Input[3]["item_reference"]; got != "fc_function" {
+		t.Errorf("item_reference = %#v, want fc_function", got)
+	}
+	if got := payload.Input[2]["call_id"]; got != "call_1" {
+		t.Errorf("call_id = %#v, want call_1", got)
+	}
+}
+
 func stringPtr(value string) *string {
 	return &value
 }
