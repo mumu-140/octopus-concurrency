@@ -1,124 +1,137 @@
-# 生产运维规范
+# Octopus 生产部署手册
 
-## 治理入口
+本文件是 fwq57ys 上 Octopus 的唯一现行部署手册。仓库规则见 `AGENTS.md`，开发流程见
+`docs/development-governance.md`，机器可读运行真值见
+`deploy/fwq57ys/production-state.json`。历史版本、旧方案和 Git 记录只能用于追溯，不能据此
+选择源码、镜像或执行部署。
 
-仓库级强制规则见 `AGENTS.md`，完整开发、分支、发布和交接流程见
-`docs/development-governance.md`。机器可读运行基线位于
-`deploy/fwq57ys/production-state.json`。
+## 职责边界
 
-开始开发或审查时运行：
+| 对象 | 规范位置 | 职责 | 禁止事项 |
+| --- | --- | --- | --- |
+| GitHub | `mumu-140/octopus-concurrency` | 远端源码、CI、Release、GHCR | 不移动公开 tag，不重写 `main` |
+| 规范源码 | `/home/yangs/API/octopus-mumu/` | 唯一开发、测试、构建和提交目录 | 不在其他目录改代码或构建 |
+| 受管 Compose | `deploy/fwq57ys/compose.yaml` | 生产部署声明真值 | 不直接挂测试数据或改用 bridge |
+| 生产控制面 | `/home/yangs/API/octopus/` | Compose 生产副本、真实数据、备份 | 不是 Git 仓库，不存源码、不构建 |
+| 生产数据 | `/home/yangs/API/octopus/data/` | `config.json`、SQLite 和运行数据 | 不复制进源码，不用于候选测试 |
+| 历史目录 | `octopus-src*`、`octopus-build-cache` | 只读现场或缓存 | 不作为开发、构建、发布或部署来源 |
 
-    scripts/check-governance.sh --repo
+生产控制面继续保留在 `octopus/`，规范源码继续保留在 `octopus-mumu/`。不要合并目录，也不要
+把 17 GB 生产数据移动到源码仓库。
 
-在 fwq57ys 执行任何获批生产操作前后运行：
+## 当前生产真值
 
-    scripts/check-governance.sh --live
-
-两种检查均为只读；`--live` 不会操作容器生命周期或写 SQLite。
-
-## 真值来源
-
-fwq57ys 上唯一可编辑的二开源码仓库是
-/home/yangs/API/octopus-mumu/。生产数据和 compose 位于
-/home/yangs/API/octopus/，该目录不是源码仓库。
-
-2026-07-20 核验的运行版本如下：
+以下值于 2026-07-20 通过 `scripts/check-governance.sh --live` 和 Docker inspect 核验：
 
 | 项目 | 值 |
 | --- | --- |
-| 版本 | v0.10.2-mumu.9 |
-| 源码提交 | ee01f2af8c6856d275421bd9bd9aca2180f57d93 |
-| 镜像 | mumu-140/octopus-concurrency:v0.10.2-mumu.9 |
-| 镜像 ID | sha256:b21cb2b9806307d34997d3756c8ba896758eab512e7e3403f5ec8fff0de8836f |
-| 容器 ID | 7acd6c3da5522b896860b75047c7b1dc80057d006d5f6c9f0002d28b8ee9001a |
-| 数据挂载 | /home/yangs/API/octopus/data:/app/data |
-| 网络 | host，0.0.0.0:35276 |
+| 运行版本 | `v0.10.2-mumu.9` |
+| 应用源码 | `ee01f2af8c6856d275421bd9bd9aca2180f57d93` |
+| 当前运行状态记录提交 | `a63b32335384672bbac3e7dfd1678cf6127989ec` |
+| 生产镜像 | `mumu-140/octopus-concurrency:v0.10.2-mumu.9` |
+| 镜像 ID | `sha256:b21cb2b9806307d34997d3756c8ba896758eab512e7e3403f5ec8fff0de8836f` |
+| 容器 | `octopus` / `7acd6c3da5522b896860b75047c7b1dc80057d006d5f6c9f0002d28b8ee9001a` |
+| 网络与监听 | `host` / `0.0.0.0:35276` |
+| 数据挂载 | `/home/yangs/API/octopus/data:/app/data` |
+| Compose 副本 | `/home/yangs/API/octopus/docker-compose.yml` |
+| 回滚容器 | `octopus-mumu7-rollback-20260719-221914` |
+| 回滚快照 | `/home/yangs/API/octopus/backups/pre-v0.10.2-mumu.9-cutover-20260719-221914/` |
 
-发布 tag 精确指向运行镜像对应的应用源码提交。运行容器、受管 Compose、生产副本和
-`production-state.json` 必须保持一致；旧 tag 和旧镜像不得重建、覆盖或移动。
+不得仅凭本文中的版本号判断当前生产。每次操作前都重新读取
+`deploy/fwq57ys/production-state.json` 并运行只读守卫。
 
-## 恢复快照
+## 镜像与源码选择
 
-规范化前的控制面快照位于：
+生产只接受同时满足以下条件的镜像：
 
-    /home/yangs/API/octopus/backups/20260716-0736-production-normalization-prechange/
+1. 精确 tag 同时出现在 `deploy/fwq57ys/compose.yaml` 和 `production-state.json`；
+2. 镜像 ID、OCI revision、source tree 与目标 Release 和源码提交一致；
+3. 构建来自干净的规范源码仓库，并通过 `scripts/build-production-image.sh <version>`；
+4. 发布 tag 是不可变的 `v<major>.<minor>.<patch>-mumu.<revision>`。
 
-其中包含完整 Git 历史、运行镜像归档、运行二进制、原 compose/config
-以及 SHA-256 证据。该快照没有复制或修改生产数据库。
+明确禁止：
 
-## 生产构建
+- 直接部署 `hureru/octopus:*` 或 `bestruirui/octopus:*`；
+- 使用浮动 `latest`、临时 Dockerfile、测试镜像或未被状态清单声明的旧 mumu tag；
+- 使用 `v0.10.2-mumu.8`。该 tag 因构建基础摘要失效导致发布失败，从未部署；
+- 从 `/home/yangs/API/octopus/`、`octopus-src*` 或 `octopus-build-cache` 构建；
+- 将 GitHub `main` 的最新提交自动解释为当前运行应用源码。
 
-生产构建统一使用 Dockerfile.build，并通过以下脚本启动：
+`Dockerfile.build` 中固定摘要的 `hureru/octopus@sha256:...` 仅是运行时基础层，本仓库构建会
+覆盖 `/app/octopus`。它不是生产部署镜像。生产 Compose 使用 `pull_policy: never`，防止未限定
+镜像名意外从 Docker Hub 拉取；需要从 GHCR 分发时，必须显式拉取
+`ghcr.io/mumu-140/octopus-concurrency:<version>`，核验后再按受管 tag 使用。
 
-    scripts/build-production-image.sh v0.10.2-mumu.0
+## 开发、发布与部署
 
-脚本要求受跟踪工作树干净，并显式传入版本、提交、源码 tree 和构建时间。
-Docker 基础镜像、Dockerfile frontend 与 pnpm 均已固定。镜像构建默认使用
-仓库已提交的 internal/price/presets.go。
+开发开始：
 
-刷新价格预设必须作为独立、可审查的源码变更执行：
+```bash
+cd /home/yangs/API/octopus-mumu
+scripts/check-governance.sh --repo
+git fetch origin
+git switch -c codex/<topic> origin/main
+```
 
-    UPDATE_PRICE_DATA=1 scripts/build.sh release
-    git diff -- internal/price/presets.go
+代码通过测试、审查和 GitHub CI 后才能普通快进 `main`。发布成功不等于允许部署；创建新
+Release、更新受管 Compose、更新生产副本、切换容器和更新状态清单是不同步骤。
 
-审查并提交生成的价格差异后，才能构建生产镜像。禁止在生产镜像构建期间
-临时从 models.dev 获取数据。
+生产构建只使用：
 
+```bash
+scripts/build-production-image.sh v<major>.<minor>.<patch>-mumu.<revision>
+```
 
+价格预设默认使用仓库已提交内容。只有独立价格更新任务才可设置 `UPDATE_PRICE_DATA=1`，并且
+必须先审查、提交生成差异，再构建正式镜像。
 
-## 2026-07-20 v0.10.2-mumu.8 / v0.10.2-mumu.9
+## 强制后台切换
 
-- `.8` 首次包含分组价格回退修复，候选验证通过，但 GitHub 发布阶段发现固定的 Go 基础镜像摘要已从 Docker Hub 撤下；该 tag 保留为失败发布证据，从未部署生产。
-- `.9` 保持完全相同的价格业务代码，只把 Go 1.26.1 Alpine 基础镜像改为经镜像索引重新验证的固定摘要；本地无缓存解析、完整镜像构建和候选冒烟均通过。
-- `.9` 已通过后台任务切换生产；快照为 `/home/yangs/API/octopus/backups/pre-v0.10.2-mumu.9-cutover-20260719-221914/`，回滚容器为 `octopus-mumu7-rollback-20260719-221914`。不得部署或复用 `.8` 镜像/tag。
+任何会中断 API 的 stop、restart、recreate、remove 或版本切换，都不得在当前代理会话的前台
+SSH 命令中直接执行。Octopus 承载 Codex/Claude/Hermes 的调用链，前台停机可能让后续启动和
+回滚命令无法发送。
 
-## 分组价格与实际模型别名
+获批维护窗口必须按以下顺序执行：
 
-价格单位为美元/百万 token。生产环境为每个请求分组维护官方价格，运行时按以下顺序计费：
+1. 运行 `scripts/check-governance.sh --repo` 和 `--live`；
+2. 创建 SQLite 在线一致性备份、Compose/inspect/镜像清单并验证 SHA-256 与 `quick_check`；
+3. 在独立数据副本、独立容器名和独立端口完成候选验证；
+4. 等待目标提交 CI、GitHub Release 和镜像发布全部成功；
+5. 把停止旧容器、保留回滚容器、启动新容器、健康等待、失败自动回滚和完整日志写入一个
+   可独立完成的后台任务；
+6. 脱离当前 API 会话启动后台任务，不再依赖当前会话继续发命令；
+7. 用新的只读连接核验容器、HTTP、host 网络、数据挂载、SQLite 和回滚点；
+8. 更新 `production-state.json`，提交运行状态，再确认该 SHA 的主线 CI。
 
-1. 上游 `actual_model_name` 存在非零价格时，使用实际模型价格；
-2. 实际模型缺失价格或仅有全零占位价格时，回退到客户端请求的分组模型价格；
-3. 请求分组本身明确配置为零价时继续按零计费，不臆造价格。
+纯文档、纯源码或 Compose 文本变更不允许触发容器生命周期。禁止全局 Docker 清理；候选资源
+必须按名称精确删除。
 
-该规则同时适用于文本、Responses 和图片请求。渠道前缀、thinking/free/console 等实际响应别名
-不再要求逐个写入价格表；分组价格是稳定基准，已有的精确实际模型价格仍保持最高优先级。
-`codex-auto-review` 无公开定价、`sensenova-6.7-flash-lite` 为免费方案，生产配置继续保留零价。
+## 价格规则
 
-## 部署
+价格单位为美元/百万 token，计费顺序为：
 
-受 Git 管理的生产 compose 是 deploy/fwq57ys/compose.yaml，生产副本是
-/home/yangs/API/octopus/docker-compose.yml。
+1. `actual_model_name` 有非零精确价格时使用实际模型价格；
+2. 实际模型缺价或只有全零占位时，回退到 `request_model_name` 的分组官方价格；
+3. 请求分组明确为零价时保持零，不臆造价格。
 
-`.9` 起生产容器由 `/home/yangs/API/octopus/docker-compose.yml` 管理，Docker Compose
-标签明确记录工作目录和配置文件。受管 Compose 与生产副本不一致时不得执行生命周期操作；
-所有后续切换仍只能在明确批准的维护窗口内通过后台任务执行。
+文本、Responses、输入估算兜底和图片路径使用同一规则。当前仅
+`codex-auto-review`（无公开定价）与 `sensenova-6.7-flash-lite`（免费方案）明确保留零价。
+历史日志不会随价格表自动重算，回填必须作为独立数据任务执行。
 
-文档或纯源码变更不得运行 docker compose 生命周期命令。获批发布前必须：
+## 验证与回滚
 
-1. 创建并验证控制面快照；
-2. 预加载并检查目标镜像；
-3. 比较生产 compose 与受 Git 管理的版本；
-4. 记录当前容器 ID、启动时间、镜像和挂载；
-5. 把 stop/recreate/start、健康等待和失败回滚写入可独立完成的后台任务，记录日志后脱离当前 API 会话执行；禁止在承载 Codex/Claude/Hermes 的前台 SSH 中直接中断 Octopus；
-6. 通过独立只读连接验证 HTTP、挂载、数据库完整性和回滚路径。
+日常只读验证：
 
-## 分支
+```bash
+cd /home/yangs/API/octopus-mumu
+scripts/check-governance.sh --repo
+scripts/check-governance.sh --live
+```
 
-main 是唯一集成主线，但不得直接在 main 开发。每个任务从最新 origin/main 创建
-短生命周期主题分支，经治理检查、测试、审查和 GitHub CI 后才可普通快进 main。
-fix/group-update-conflict 保留 v0.10.1-mumu.1 发布分支。
-codex/v0.10.1-image-api 包含尚未发布的协议路由工作；未完成独立审查和
-数据库迁移验证前，不得合并或部署。
+`--live` 只读取容器、Compose、挂载和 HTTP 基线，不操作生命周期或写 SQLite。
 
-GitHub 私有仓库当前套餐不支持服务端 branch protection。服务器规范源码仓库必须运行
-`scripts/install-git-hooks.sh` 安装版本化 pre-push guard；任何新克隆也必须先安装。
+当前回滚只能使用状态清单声明的 `.7` 回滚容器和 `.9` 切换快照。回滚也属于生产生命周期
+操作，必须由带日志和失败处理的独立后台任务执行；不得复制旧文档中的前台 Docker 命令。
 
-
-## 2026-07-19 v0.10.2-mumu.7 item_reference passthrough
-
-- Issue: outbound Responses path synthesized `function_call_output.item_reference`, rejected by gateways such as Anyrouter (`unknown_parameter`).
-- Fix commit: `2125315` — leave `item_reference` exactly as client-sent; keep typed item ID normalization.
-- Image/tag: `mumu-140/octopus-concurrency:v0.10.2-mumu.7` / annotated tag `v0.10.2-mumu.7`.
-- Candidate: `:35287` on DB copy; chat + responses smoke OK.
-- Production cutover snapshot: `/home/yangs/API/octopus/backups/pre-v0.10.2-mumu.7-cutover-20260719-081850/`.
-- Rollback container: `octopus-mumu6-rollback-20260719-081850` (`v0.10.2-mumu.6`).
+vps76 的 `/opt/docker/octopus/data/` 只是 2026-07-10 迁移时的历史小型数据副本，已停止的
+`hureru/octopus:latest` 不是受支持回滚版本。vps76 不是热备或可直接启动的灾备节点。

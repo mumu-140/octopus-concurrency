@@ -101,20 +101,15 @@ If your provider isn't a relay site but gave you a Base URL + Key directly (e.g.
 
 ## IV. Deployment & First Login
 
-### 4.1 Deployment (Choose One)
+### 4.1 Deployment boundary
 
-**Docker run:**
-```bash
-docker run -d --name octopus -v /path/to/data:/app/data -p 8080:8080 hureru/octopus
-```
+This guide explains application usage, not fwq57ys production deployment. For production, follow
+[docs/production.md](docs/production.md) and use only the exact image declared by the managed Compose and
+machine state file. Never substitute `hureru/octopus`, `bestruirui/octopus`, `latest`, an old mumu tag, or
+the repository's historical root Compose.
 
-**docker compose:**
-```bash
-wget https://raw.githubusercontent.com/Hureru/octopus/refs/heads/dev/docker-compose.yml
-docker compose up -d
-```
-
-> ⚠️ **You must use the `hureru/octopus` image** (the version with Site functionality). If you use `bestrui/octopus` or other upstream images, you won't see the "Sites" page. For Release binaries and building from source, see [README.md](README.md).
+For local evaluation, start the current source as described in [README.md](README.md) with disposable local
+data. Never mount, clear, or copy `/home/yangs/API/octopus/data` for development.
 
 ### 4.2 First Login
 
@@ -124,7 +119,8 @@ Open `http://your-IP:8080` in a browser. Default credentials:
 - Password: `admin`
 
 > ⚠️ **Login says wrong password?** Most likely you previously installed the upstream version and the `data` directory has leftover data (the old credentials were preserved).
-> Solution: Use the old password if you remember it; otherwise **clear the data directory and redeploy**. See [FAQ Q1](#q1-default-adminadmin-login-fails).
+> Solution for a disposable local instance: use the old password or recreate only that local test data.
+> Never clear production data. See [FAQ Q1](#q1-default-adminadmin-login-fails).
 
 ### 4.3 Change Password Immediately
 
@@ -488,7 +484,9 @@ In Settings you can enable a **Proxy Pool** to centrally manage reusable proxy c
 > Common usage questions collected here.
 
 ### Q1. Default admin/admin login fails?
-Most likely you **previously installed the upstream version and the `data` directory has leftover data** — the old credentials were preserved. Use the old password if you remember it; otherwise **clear the data directory and redeploy**. In a clean environment, admin/admin always works.
+Most likely you previously installed another version and the old credentials remain in `data`. Use the old
+password or reset credentials through the supported administration path. Only a disposable local test
+instance may recreate its own data; never clear fwq57ys production data.
 
 ### Q2. Models exist, but creating a Key says no available models?
 Because **you haven't created a group yet**. In Octopus, "group name = available model name". **Go to the Groups page and create a group first**, then you'll be able to select models when creating a Key.
@@ -556,6 +554,7 @@ First confirm the **upstream provider itself** is configured correctly (the same
 
 <div align="center">
 
-For questions not covered in this guide, feel free to open an [Issue on GitHub](https://github.com/Hureru/octopus) or discuss on the [LinuxDO thread](https://linux.do/t/topic/2160826).
+For fork-specific questions not covered in this guide, open an issue in
+[mumu-140/octopus-concurrency](https://github.com/mumu-140/octopus-concurrency).
 
 </div>

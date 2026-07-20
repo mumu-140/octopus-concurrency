@@ -101,20 +101,15 @@ Octopus 是一个 **LLM API 聚合与负载均衡服务**。简单说，它帮�
 
 ## 四、部署与首次登录
 
-### 4.1 部署（任选一种）
+### 4.1 部署边界
 
-**Docker 直接运行：**
-```bash
-docker run -d --name octopus -v /path/to/data:/app/data -p 8080:8080 hureru/octopus
-```
+本指南说明应用使用方式，不是 fwq57ys 生产部署手册。生产操作必须遵循
+[docs/production.md](docs/production.md)，只使用受管 Compose 和机器状态清单共同声明的精确
+镜像。不得替换为 `hureru/octopus`、`bestruirui/octopus`、`latest`、旧 mumu tag 或仓库历史
+根 Compose。
 
-**docker compose：**
-```bash
-wget https://raw.githubusercontent.com/Hureru/octopus/refs/heads/dev/docker-compose.yml
-docker compose up -d
-```
-
-> ⚠️ **镜像一定要用 `hureru/octopus`**（带站点功能的版本）。如果你用的是 `bestrui/octopus` 等原版镜像，是看不到"站点"页面的。Release 二进制、源码编译方式见 [README_zh.md](README_zh.md)。
+本地体验按 [README_zh.md](README_zh.md) 从当前源码启动，并使用可丢弃的本地数据。不得为开发
+挂载、清空或复制 `/home/yangs/API/octopus/data`。
 
 ### 4.2 首次登录
 
@@ -124,7 +119,8 @@ docker compose up -d
 - 密码：`admin`
 
 > ⚠️ **登录提示密码错误？大概率是装过原版、`data` 目录里残留了旧数据**（旧账号密码被保留了下来）。
-> 解决：记得旧密码就用旧的；不记得就**清空数据目录后重新部署**。详见 [FAQ Q1](#q1-默认-adminadmin-登录失败)。
+> 本地可丢弃实例可使用旧密码，或只重建该本地测试数据。生产数据绝对不能清空。详见
+> [FAQ Q1](#q1-默认-adminadmin-登录失败)。
 
 ### 4.3 立刻改密码
 
@@ -488,7 +484,8 @@ Octopus 支持 **OpenAI Chat / OpenAI Responses / Anthropic** 三种格式互相
 > 汇总最常见的使用问题。
 
 ### Q1. 默认 admin/admin 登录失败？
-大概率是**装过原版、`data` 目录残留了旧数据**，旧账号密码被保留了。记得旧密码就用旧的；不记得就**清空数据目录后重新部署**。干净环境下 admin/admin 一定能登录。
+大概率是运行过其他版本，旧凭据仍保存在 `data` 中。使用旧密码，或通过受支持的管理路径重置
+凭据。只有可丢弃的本地测试实例才能重建自己的数据；绝对不能清空 fwq57ys 生产数据。
 
 ### Q2. 已经有模型了，为什么创建 Key 时说没有可用模型？
 因为**还没建分组**。octopus 里"分组名 = 可用的模型名"，**先去分组页新建一个分组**，创建 Key 时就能选到了。
@@ -556,6 +553,7 @@ Octopus 支持 **OpenAI Chat / OpenAI Responses / Anthropic** 三种格式互相
 
 <div align="center">
 
-遇到本指南没覆盖的问题，欢迎到 [GitHub](https://github.com/Hureru/octopus) 提 Issue，或到 [LinuxDO 帖子](https://linux.do/t/topic/2160826) 交流。
+本指南未覆盖的二开问题统一在
+[mumu-140/octopus-concurrency](https://github.com/mumu-140/octopus-concurrency) 提交 Issue。
 
 </div>

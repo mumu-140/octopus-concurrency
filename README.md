@@ -12,6 +12,11 @@
 
 > Forked from [bestruirui/octopus](https://github.com/bestruirui/octopus) — see [Differences from Upstream](#-differences-from-upstream) for what this fork changes.
 
+> **mumu deployment boundary:** this repository is the only source for the fwq57ys production fork.
+> Do not deploy `hureru/octopus`, `bestruirui/octopus`, `latest`, or an old mumu image by following
+> upstream examples. Operators must read [the production manual](docs/production.md) and use only the
+> exact image declared by `deploy/fwq57ys/compose.yaml` and `deploy/fwq57ys/production-state.json`.
+
 
 ## ✨ Features
 
@@ -31,60 +36,29 @@
 
 ## 🚀 Quick Start
 
-### 🐳 Docker
+### Production on fwq57ys
 
-Run directly:
+Production is not started from README commands. Read [docs/production.md](docs/production.md), verify the
+machine state, and use the managed Compose only during an approved maintenance window. Container lifecycle
+changes must run as a detached background task because Octopus carries the active agent API connection.
 
-```bash
-docker run -d --name octopus -v /path/to/data:/app/data -p 8080:8080 hureru/octopus
-```
+### Local development
 
-Or use docker compose:
-
-```bash
-wget https://raw.githubusercontent.com/Hureru/octopus/refs/heads/dev/docker-compose.yml
-docker compose up -d
-```
-
-
-### 📦 Download from Release
-
-Download the binary for your platform from [Releases](https://github.com/Hureru/octopus/releases), then run:
+Use the current source checkout and disposable local data. Do not mount or copy fwq57ys production data.
+Tool versions are pinned by `Dockerfile.build` and `web/package.json`.
 
 ```bash
-./octopus start
+cd web
+pnpm install --frozen-lockfile
+NEXT_PUBLIC_API_BASE_URL="http://127.0.0.1:8080" pnpm run dev
+
+# In another terminal, from the repository root:
+go run . start
 ```
 
-### 🛠️ Build from Source
-
-**Requirements:**
-- Go 1.24.4
-- Node.js 18+
-- pnpm
-
-```bash
-# Clone the repository
-git clone https://github.com/Hureru/octopus.git
-cd octopus
-# Build frontend
-cd web && pnpm install && pnpm run build && cd ..
-# Move frontend assets to static directory
-mv web/out static/
-# Start the backend service
-go run main.go start 
-```
-
-> 💡 **Tip**: The frontend build artifacts are embedded into the Go binary, so you must build the frontend before starting the backend.
-
-**Development Mode**
-
-```bash
-cd web && pnpm install && NEXT_PUBLIC_API_BASE_URL="http://127.0.0.1:8080" pnpm run dev
-## Open a new terminal, start the backend service
-go run main.go start
-## Access the frontend at
-http://localhost:3000
-```
+Release binaries and GHCR artifacts belong to this repository's
+[Releases](https://github.com/mumu-140/octopus-concurrency/releases). A Release artifact is not deployment
+authorization; production still uses the exact version in the machine state file.
 
 ### 🔐 Default Credentials
 
@@ -411,4 +385,3 @@ Compatible with [bestruirui/octopus](https://github.com/bestruirui/octopus), ~18
 ## 🔗 Friend Links
 
 - 🐧 [LinuxDO](https://linux.do) - A community for tech enthusiasts
-

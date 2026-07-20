@@ -8,8 +8,9 @@
 
 | 对象 | 唯一位置 | 允许操作 |
 | --- | --- | --- |
+| GitHub 仓库 | `mumu-140/octopus-concurrency` | 代码、文档、CI、Release 和 GHCR 的远端真值 |
 | 可编辑源码 | `/home/yangs/API/octopus-mumu/` | 开发、测试、提交、构建 |
-| 生产控制面 | `/home/yangs/API/octopus/` | 仅维护 compose、配置副本和备份 |
+| 生产控制面 | `/home/yangs/API/octopus/` | 仅保存生产 compose 副本、运行数据和备份；不是源码 |
 | 生产数据 | `/home/yangs/API/octopus/data/` | 仅获批的数据操作；不得用于开发或测试 |
 | 构建缓存 | `/home/yangs/API/octopus-build-cache/` | 仅作缓存；不是源码，不得提交或部署 |
 | 历史源码 | `/home/yangs/API/octopus-src/` | 只读保留，不得继续开发、构建或部署 |
@@ -17,6 +18,13 @@
 
 禁止新建第二个 Octopus 源码目录。禁止在生产目录、历史目录或缓存目录修改代码。
 目录存在不代表它是当前进度；Git 提交、生产状态清单和运行容器才是证据。
+
+生产身份必须同时满足以下条件，缺一项都不得启动或重建：
+
+1. 镜像 tag、镜像 ID、应用源码提交与 `deploy/fwq57ys/production-state.json` 一致；
+2. Compose 来自 `deploy/fwq57ys/compose.yaml`，生产副本与其逐字一致；
+3. 数据只挂载 `/home/yangs/API/octopus/data:/app/data`，网络模式为 `host`；
+4. `scripts/check-governance.sh --repo` 和 `--live` 均通过。
 
 ## 2. 任务与会话边界
 
@@ -61,6 +69,12 @@
 
 - 生产镜像只使用 `Dockerfile.build` 和 `scripts/build-production-image.sh`。
 - 禁止使用已删除的 `Dockerfile.concurrency`、浮动 `latest` 基础镜像或临时 Dockerfile。
+- 生产服务不得直接运行 `hureru/octopus`、`bestruirui/octopus`、已删除的历史根
+  Compose、任意旧 mumu tag 或仅凭名称相似的本地镜像。
+- `Dockerfile.build` 最后一阶段的固定摘要 `hureru/octopus@sha256:...` 只是运行时
+  基础层，应用二进制会被本仓库构建产物覆盖；该基础层本身不是可部署的生产镜像。
+- 唯一允许的生产镜像是受管 Compose 和 `production-state.json` 同时声明、且 OCI
+  revision/source tree 已核验的精确版本。`v0.10.2-mumu.8` 发布失败且从未部署，禁止使用。
 - 构建必须来自干净、已提交的工作树，并写入 version、revision、source tree、
   RFC 3339 UTC build time 和 source URL。
 - pnpm 版本由 `web/package.json` 固定；原生依赖许可只维护在
@@ -74,8 +88,11 @@
 
 - 未获得明确维护窗口授权时，禁止执行任何 compose/container 生命周期命令，
   包括 up、down、restart、stop、rm 和 recreate。
-- 更新 `/home/yangs/API/octopus/docker-compose.yml` 文本不等于部署，也不代表 compose
-  已接管当前手工容器。
+- 即使已获维护窗口授权，stop/recreate/start、健康等待和失败回滚也必须写入带日志的
+  独立后台任务，脱离当前 Codex/Claude/Hermes/API 会话执行。禁止在承载当前代理通信的
+  前台 SSH 命令中直接中断 Octopus。
+- 更新 `/home/yangs/API/octopus/docker-compose.yml` 文本不等于部署；是否已生效必须以容器
+  Compose 标签、运行指纹和 `production-state.json` 共同核验。
 - 生产 SQLite 不得用于开发测试。禁止直接改库、复制到源码目录、加入构建上下文或提交。
 - 数据变更必须先创建并验证最小快照，再通过受审查的迁移或应用 API 执行，并记录范围。
 - 禁止全局 Docker 清理。测试镜像和容器必须使用唯一名称并在验证后精确删除。

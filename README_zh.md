@@ -12,6 +12,11 @@
 
 > 本项目 Fork 自 [bestruirui/octopus](https://github.com/bestruirui/octopus)，与上游的差异见 [与上游的差异](#-与上游的差异)。
 
+> **mumu 部署边界：**本仓库是 fwq57ys 二开版本的唯一源码。不得照搬上游示例部署
+> `hureru/octopus`、`bestruirui/octopus`、`latest` 或旧 mumu 镜像。运维前必须阅读
+> [生产部署手册](docs/production.md)，并且只使用 `deploy/fwq57ys/compose.yaml` 与
+> `deploy/fwq57ys/production-state.json` 同时声明的精确镜像。
+
 
 ## ✨ 特性
 
@@ -31,60 +36,29 @@
 
 ## 🚀 快速开始
 
-### 🐳 Docker 运行
+### fwq57ys 生产环境
 
-直接运行
+生产环境不使用 README 中的通用启动命令。先阅读 [生产部署手册](docs/production.md)，核验机器
+状态，并且只在获批维护窗口内使用受管 Compose。Octopus 承载当前代理 API，任何容器生命周期
+操作必须由脱离当前会话的独立后台任务完成。
 
-```bash
-docker run -d --name octopus -v /path/to/data:/app/data -p 8080:8080 hureru/octopus
-```
+### 本地开发
 
-或者使用 docker compose 运行
-
-```bash
-wget https://raw.githubusercontent.com/Hureru/octopus/refs/heads/dev/docker-compose.yml
-docker compose up -d
-```
-
-
-### 📦 从 Release 下载
-
-从 [Releases](https://github.com/Hureru/octopus/releases) 下载对应平台的二进制文件，然后运行：
+使用当前源码和可丢弃的本地数据，不得挂载或复制 fwq57ys 生产数据。工具版本以
+`Dockerfile.build` 和 `web/package.json` 的固定值为准。
 
 ```bash
-./octopus start
+cd web
+pnpm install --frozen-lockfile
+NEXT_PUBLIC_API_BASE_URL="http://127.0.0.1:8080" pnpm run dev
+
+# 另开终端，在仓库根目录启动后端：
+go run . start
 ```
 
-### 🛠️ 源码运行
-
-**环境要求：**
-- Go 1.24.4
-- Node.js 18+
-- pnpm
-
-```bash
-# 克隆项目
-git clone https://github.com/Hureru/octopus.git
-cd octopus
-# 构建前端
-cd web && pnpm install && pnpm run build && cd ..
-# 移动前端产物到 static 目录
-mv web/out static/
-# 启动后端服务
-go run main.go start 
-```
-
-> 💡 **提示**：前端构建产物会被嵌入到 Go 二进制文件中，所以必须先构建前端再启动后端。
-
-**开发模式**
-
-```bash
-cd web && pnpm install && NEXT_PUBLIC_API_BASE_URL="http://127.0.0.1:8080" pnpm run dev
-## 新建终端,启动后端服务
-go run main.go start
-## 访问前端地址
-http://localhost:3000
-```
+二进制和 GHCR 产物以本仓库的
+[Releases](https://github.com/mumu-140/octopus-concurrency/releases) 为准。Release 发布成功不等于
+获得生产部署授权，生产仍必须使用状态清单声明的精确版本。
 
 ### 🔐 默认账户
 

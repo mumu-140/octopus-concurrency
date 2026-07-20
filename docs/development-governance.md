@@ -21,6 +21,9 @@ release workflow 和受版本控制的部署声明都在这里修改。
 
 该目录不是源码仓库。不得在其中复制源码、执行 Git 初始化或临时构建。
 
+仓库根目录不再提供通用 `docker-compose.yml`。唯一受版本控制的生产 Compose 是
+`deploy/fwq57ys/compose.yaml`；本地开发按 README 从源码启动并使用独立数据。
+
 ### 历史与缓存目录
 
 以下目录只保留现场，不得作为开发起点：
@@ -84,15 +87,11 @@ OCTOPUS_MAIN_PROMOTION=1 git push origin main
 - 回到干净 `main`。
 - 更新交接记录，注明“未部署”或具体部署证据。
 
-## 当前历史分支分类
+## 分支与历史版本
 
-| 分支 | 状态 | 规则 |
-| --- | --- | --- |
-| `main` | 唯一集成主线 | 不直接开发，只接受验证后的普通快进 |
-| `fix/group-update-conflict` | `.1` 发布历史 | 保留，不继续开发 |
-| `codex/production-normalization` | 规范化历史 checkpoint | 保留，不继续开发 |
-| `codex/v0.10.1-image-api` | 未发布隔离进度 | 未经独立方案、迁移验证和审查不得合并 |
-| `backup/*` | 恢复证据 | 只读保留 |
+`main` 是唯一集成主线，但不是运行版本的替代描述。历史分支、backup 分支和旧 release tag
+只用于追溯，不能作为新任务起点或部署来源。需要确认隔离分支时读取
+`production-state.json` 的 `quarantinedBranches`，不要依赖文档中复制的旧列表。
 
 ## 发布与部署分离
 
@@ -104,6 +103,9 @@ OCTOPUS_MAIN_PROMOTION=1 git push origin main
 4. 核对二进制版本、Go 版本、commit、build time、OCI revision/source tree。
 5. 推送新镜像，不覆盖旧版本。
 
+生产服务只允许使用 `deploy/fwq57ys/compose.yaml` 和 `production-state.json` 同时声明的精确
+镜像。上游镜像、`latest`、旧 mumu tag、失败发布 tag 和本地测试镜像均不得替代生产镜像。
+
 ### 部署
 
 发布成功不自动授权部署。部署必须另有维护窗口，且执行：
@@ -112,7 +114,7 @@ OCTOPUS_MAIN_PROMOTION=1 git push origin main
 2. 创建并验证控制面/必要数据快照；
 3. 预加载目标镜像；
 4. 记录旧容器和数据指纹；
-5. 执行获批切换；
+5. 把获批切换及失败回滚写成带日志、可独立完成的后台任务，脱离当前 API 会话执行；
 6. 验证 HTTP、模型接口、挂载、数据库和回滚；
 7. 更新生产状态清单并提交。
 
