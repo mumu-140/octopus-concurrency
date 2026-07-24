@@ -141,11 +141,7 @@
       "sortByCount": "Count",
       "sortByTokens": "Tokens",
       "noData": "No ranking data",
-      "successRate": "Success Rate",
-      "channelMode": "Channel",
-      "groupMode": "Group",
-      "sortByFailed": "Failed",
-      "failed": "Failed"
+      "successRate": "Success Rate"
     },
     "groupHealth": {
       "title": "Group Health",

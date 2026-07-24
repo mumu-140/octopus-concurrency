@@ -141,11 +141,7 @@
       "sortByCount": "次数",
       "sortByTokens": "Tokens",
       "noData": "暂无排行数据",
-      "successRate": "成功率",
-      "channelMode": "渠道",
-      "groupMode": "分组",
-      "sortByFailed": "失败",
-      "failed": "失败"
+      "successRate": "成功率"
     },
     "groupHealth": {
       "title": "分组健康",

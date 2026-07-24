@@ -117,9 +117,6 @@ func DBExportAll(ctx context.Context, includeLogs, includeStats bool) (*model.DB
 		if err := conn.Find(&d.StatsSiteModelHourly).Error; err != nil {
 			return nil, fmt.Errorf("export stats_site_model_hourly: %w", err)
 		}
-		if err := conn.Find(&d.StatsDimensionHourly).Error; err != nil {
-			return nil, fmt.Errorf("export stats_dimension_hourly: %w", err)
-		}
 	}
 
 	if includeLogs {
@@ -675,14 +672,6 @@ func DBImportIncremental(ctx context.Context, dump *model.DBDump) (*model.DBImpo
 			} else {
 				res.RowsAffected["stats_site_model_hourly"] = n
 			}
-
-			if n, err := createUpsertAll(tx, dump.StatsDimensionHourly, []clause.Column{
-				{Name: "hour"}, {Name: "dimension_type"}, {Name: "dimension_key"},
-			}); err != nil {
-				return fmt.Errorf("import stats_dimension_hourly: %w", err)
-			} else {
-				res.RowsAffected["stats_dimension_hourly"] = n
-			}
 		}
 
 		// 16. RelayLogs (Snowflake IDs - keep createDoNothing)
@@ -984,9 +973,6 @@ func DBExportZip(ctx context.Context, w io.Writer, includeLogs, includeStats boo
 			return err
 		}
 		if err := writeZipTable(ctx, zw, conn, "stats_site_model_hourly.json", &[]model.StatsSiteModelHourly{}); err != nil {
-			return err
-		}
-		if err := writeZipTable(ctx, zw, conn, "stats_dimension_hourly.json", &[]model.StatsDimensionHourly{}); err != nil {
 			return err
 		}
 	}

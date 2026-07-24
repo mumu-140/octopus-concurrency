@@ -38,7 +38,6 @@ type DBDump struct {
 	StatsChannel         []StatsChannel         `json:"stats_channel,omitempty"`
 	StatsAPIKey          []StatsAPIKey          `json:"stats_api_key,omitempty"`
 	StatsSiteModelHourly []StatsSiteModelHourly `json:"stats_site_model_hourly,omitempty"`
-	StatsDimensionHourly []StatsDimensionHourly `json:"stats_dimension_hourly,omitempty"`
 
 	RelayLogs []RelayLog `json:"relay_logs,omitempty"`
 }
