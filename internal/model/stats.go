@@ -55,6 +55,24 @@ type StatsSiteModelHourly struct {
 	StatsMetrics
 }
 
+// StatsDimensionHourly 按 (维度类型, 维度键) 的小时聚合统计，
+// 支撑排行榜的渠道/分组两种模式与每日/7天/30天/全部时间窗。
+// DimensionType 取 StatsDimChannel / StatsDimGroup；
+// DimensionKey：channel 模式为 channelID 字符串，group 模式为分组名。
+type StatsDimensionHourly struct {
+	Hour          int    `json:"hour" gorm:"primaryKey;autoIncrement:false"`
+	DimensionType string `json:"dimension_type" gorm:"primaryKey;type:varchar(16);index:idx_stats_dim_lookup"`
+	DimensionKey  string `json:"dimension_key" gorm:"primaryKey;type:varchar(128);index:idx_stats_dim_lookup"`
+	Date          string `json:"date" gorm:"not null;type:varchar(8)"`
+	LastRequestAt int64  `json:"last_request_at" gorm:"not null;default:0"`
+	StatsMetrics
+}
+
+const (
+	StatsDimChannel = "channel"
+	StatsDimGroup   = "group"
+)
+
 // Add aggregates another StatsMetrics into the current one.
 func (s *StatsMetrics) Add(delta StatsMetrics) {
 	s.InputToken += delta.InputToken

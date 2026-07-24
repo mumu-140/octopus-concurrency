@@ -221,6 +221,10 @@ func persistStatsSnapshots(
 		return err
 	}
 
+	if err := StatsDimensionHourlySaveDB(ctx); err != nil {
+		return err
+	}
+
 	return nil
 }
 

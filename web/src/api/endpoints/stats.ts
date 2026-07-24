@@ -153,6 +153,66 @@ export function useStatsTotal() {
 
 
 /**
+ * 排行榜维度模式：渠道 / 分组
+ */
+export type LeaderboardMode = 'channel' | 'group';
+export type LeaderboardWindow = '1' | '7' | '30' | 'all';
+
+/**
+ * 后端 /api/v1/stats/leaderboard 单行原始结构
+ */
+interface LeaderboardRow extends StatsMetrics {
+    key: string;
+    name: string;
+    last_request_at: number;
+}
+
+/**
+ * 排行榜单行：原始键 + 名称 + 格式化指标。
+ * 与渠道列表约定一致，格式化指标收敛在 formatted 下，供组件排序与展示。
+ */
+export interface LeaderboardEntry {
+    key: string;
+    name: string;
+    last_request_at: number;
+    formatted: StatsMetricsFormatted;
+}
+
+/**
+ * 获取排行榜数据 Hook（渠道 / 分组 × 时间窗口）
+ * 排序与指标选择交由组件处理，与既有排行榜一致。
+ */
+export function useLeaderboard(mode: LeaderboardMode, window: LeaderboardWindow) {
+    return useQuery({
+        queryKey: ['stats', 'leaderboard', mode, window],
+        queryFn: async () => {
+            return apiClient.get<LeaderboardRow[]>('/api/v1/stats/leaderboard', {
+                mode,
+                window,
+            });
+        },
+        select: (data) => data.map((item): LeaderboardEntry => ({
+            key: item.key,
+            name: item.name,
+            last_request_at: item.last_request_at,
+            formatted: {
+                input_token: formatCount(item.input_token),
+                output_token: formatCount(item.output_token),
+                total_token: formatCount(item.input_token + item.output_token),
+                input_cost: formatMoney(item.input_cost),
+                output_cost: formatMoney(item.output_cost),
+                total_cost: formatMoney(item.input_cost + item.output_cost),
+                wait_time: formatTime(item.wait_time),
+                request_success: formatCount(item.request_success),
+                request_failed: formatCount(item.request_failed),
+                request_count: formatCount(item.request_success + item.request_failed),
+            },
+        })),
+        refetchInterval: 30000,
+    });
+}
+
+/**
  * 获取 API Key 统计数据列表 Hook
  */
 export function useStatsAPIKey() {

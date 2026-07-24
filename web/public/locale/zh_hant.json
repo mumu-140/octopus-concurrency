@@ -141,7 +141,11 @@
       "sortByCount": "次數",
       "sortByTokens": "Tokens",
       "noData": "暫無排行數據",
-      "successRate": "成功率"
+      "successRate": "成功率",
+      "channelMode": "渠道",
+      "groupMode": "分組",
+      "sortByFailed": "失敗",
+      "failed": "失敗"
     },
     "groupHealth": {
       "title": "分組健康",

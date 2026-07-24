@@ -3,6 +3,7 @@ package relay
 import (
 	"context"
 	"encoding/json"
+	"strconv"
 	"time"
 
 	"github.com/bestruirui/octopus/internal/conf"
@@ -158,6 +159,8 @@ func (m *RelayMetrics) SaveWithChannelStats(ctx context.Context, success bool, e
 		updateFinalChannelUsageStats(channelID, globalStats)
 	}
 	op.StatsSiteModelHourlyRecordAttempts(attempts, m.ActualModel)
+	op.StatsDimensionHourlyUpdate(model.StatsDimChannel, strconv.Itoa(channelID), globalStats)
+	op.StatsDimensionHourlyUpdate(model.StatsDimGroup, m.RequestModel, globalStats)
 
 	// 上游未上报 usage（或输入侧全为 0）时打告警，便于定位是哪个通道缺失 usage。
 	if success && (m.InternalResponse == nil || m.InternalResponse.Usage == nil ||

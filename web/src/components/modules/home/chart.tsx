@@ -8,7 +8,7 @@ import { useTranslations } from 'next-intl';
 import { formatCount, formatMoney, formatTime } from '@/lib/utils';
 import dayjs from 'dayjs';
 import { AnimatedNumber } from '@/components/common/AnimatedNumber';
-import { Tabs, TabsList, TabsTrigger } from '@/components/animate-ui/components/animate/tabs';
+import { WindowSwitch } from './window-switch';
 import { useHomeViewStore, type ChartPeriod } from '@/components/modules/home/store';
 
 type Formatted = { value: string; unit: string };
@@ -41,7 +41,6 @@ export function StatsChart() {
     const { data: statsHourly } = useStatsHourly();
 
     const period = useHomeViewStore((state) => state.chartPeriod);
-    const setChartPeriod = useHomeViewStore((state) => state.setChartPeriod);
 
     const sortedDaily = useMemo(() => {
         if (!statsDaily) return [];
@@ -173,36 +172,29 @@ export function StatsChart() {
 
     return (
         <section className="rounded-3xl bg-card border-card-border border text-card-foreground custom-shadow">
-            {/* Header: hero + tabs */}
-            <header className="px-5 pt-5 pb-4 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                <div>
+            {/* Header: hero + 共享时间窗口切换 */}
+            <header className="px-4 pt-3 pb-2 flex items-start justify-between gap-3">
+                <div className="min-w-0">
                     <p className="text-xs text-muted-foreground">{t(`headline.${PERIOD_KEY[period]}`)}</p>
-                    <p className="mt-1 text-4xl md:text-5xl font-semibold tabular-nums tracking-tight">
+                    <p className="mt-0.5 text-2xl md:text-3xl font-semibold tabular-nums tracking-tight">
                         {hero.value === undefined ? (
                             <span className="text-muted-foreground">—</span>
                         ) : (
                             <>
-                                <span className="text-muted-foreground text-2xl mr-1">$</span>
+                                <span className="text-muted-foreground text-lg mr-0.5">$</span>
                                 <AnimatedNumber value={hero.value} />
                                 {heroUnitSuffix && (
-                                    <span className="ml-1 text-xl text-muted-foreground">{heroUnitSuffix}</span>
+                                    <span className="ml-1 text-base text-muted-foreground">{heroUnitSuffix}</span>
                                 )}
                             </>
                         )}
                     </p>
                 </div>
-                <Tabs value={period} onValueChange={(v) => setChartPeriod(v as ChartPeriod)}>
-                    <TabsList>
-                        <TabsTrigger value="1">{t('periods.today')}</TabsTrigger>
-                        <TabsTrigger value="7">{t('periods.last7Days')}</TabsTrigger>
-                        <TabsTrigger value="30">{t('periods.last30Days')}</TabsTrigger>
-                        <TabsTrigger value="all">{t('periods.allTime')}</TabsTrigger>
-                    </TabsList>
-                </Tabs>
+                <WindowSwitch />
             </header>
 
             {/* Metrics row */}
-            <div className="mx-5 flex items-baseline gap-6 border-t border-border/60 py-3 text-sm tabular-nums">
+            <div className="mx-4 flex items-baseline gap-5 border-t border-border/60 py-2 text-sm tabular-nums">
                 <StatItem label={t('metrics.requests')} value={metrics.requests} />
                 <span className="h-4 w-px bg-border/60" />
                 <StatItem label={t('metrics.tokens')} value={metrics.tokens} />
@@ -211,7 +203,7 @@ export function StatsChart() {
             </div>
 
             {/* Area chart — only total_cost */}
-            <ChartContainer config={chartConfig} className="h-40 w-full">
+            <ChartContainer config={chartConfig} className="h-28 w-full">
                 <AreaChart accessibilityLayer data={chartData}>
                     <defs>
                         <linearGradient id="fillCost" x1="0" y1="0" x2="0" y2="1">
