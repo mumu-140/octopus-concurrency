@@ -11,6 +11,10 @@ import (
 func InitCache() error {
 	ctx, cancel := context.WithTimeout(context.Background(), conf.CacheInitTimeout())
 	defer cancel()
+	return refreshAllCaches(ctx)
+}
+
+func refreshAllCaches(ctx context.Context) error {
 	if err := settingRefreshCache(ctx); err != nil {
 		return fmt.Errorf("setting refresh cache error: %v", err)
 	}

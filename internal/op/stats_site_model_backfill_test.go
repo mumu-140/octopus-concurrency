@@ -13,7 +13,7 @@ import (
 // TestStatsSiteModelBackfillIgnoresHeavyContent 通过插入一批携带巨型
 // request_content / response_content 的 relay_logs，验证回填依然能正确聚合
 // 出小时桶。结构上 backfillLogRow 不再包含这两个字段，行为上这条用例
-// 也保证 attempts JSON、legacy error 字段、setting 标记 等逻辑维持原状。
+// 也保证 attempts JSON、显式 Success 字段、setting 标记等逻辑维持原状。
 // 如果有人退化掉 Select 投影或扩张 backfillLogRow，本用例不会直接红，
 // 但任何破坏聚合语义的修改都会失败。
 func TestStatsSiteModelBackfillIgnoresHeavyContent(t *testing.T) {
@@ -53,6 +53,9 @@ func TestStatsSiteModelBackfillIgnoresHeavyContent(t *testing.T) {
 
 	heavy := strings.Repeat("x", 64*1024) // 64KB per row, large enough to dwarf scalar fields
 	now := time.Now().Unix()
+	originalLiveSince := statsLeaderboardLiveSince
+	statsLeaderboardLiveSince = now + 1
+	t.Cleanup(func() { statsLeaderboardLiveSince = originalLiveSince })
 	hour := int(now / 3600)
 	logs := []model.RelayLog{
 		{
@@ -61,7 +64,7 @@ func TestStatsSiteModelBackfillIgnoresHeavyContent(t *testing.T) {
 			ChannelId:        101,
 			ActualModelName:  "gpt-4o",
 			RequestModelName: "gpt-4o",
-			Error:            "",
+			Success:          true,
 			RequestContent:   heavy,
 			ResponseContent:  heavy,
 			Attempts: []model.ChannelAttempt{
@@ -75,10 +78,10 @@ func TestStatsSiteModelBackfillIgnoresHeavyContent(t *testing.T) {
 			ChannelId:        202,
 			ActualModelName:  "claude",
 			RequestModelName: "claude",
-			Error:            "timeout",
+			Success:          false,
 			RequestContent:   heavy,
 			ResponseContent:  heavy,
-			// no Attempts -> legacy code path: success := error == ""
+			// no Attempts -> final request status comes from explicit Success.
 		},
 		{
 			ID:               3,
@@ -87,6 +90,17 @@ func TestStatsSiteModelBackfillIgnoresHeavyContent(t *testing.T) {
 			ActualModelName:  "ghost",
 			RequestModelName: "ghost",
 			RequestContent:   heavy,
+		},
+		{
+			ID:               4,
+			Time:             now,
+			UseTime:          2000,
+			ChannelId:        101,
+			ActualModelName:  "gpt-4o",
+			RequestModelName: "gpt-4o",
+			Success:          true,
+			// Completion is after the process-start boundary, so live accounting
+			// owns this attempt and startup backfill must skip it.
 		},
 	}
 	if err := db.Create(&logs).Error; err != nil {
@@ -124,7 +138,7 @@ func TestStatsSiteModelBackfillIgnoresHeavyContent(t *testing.T) {
 		t.Fatalf("account=10 gpt-4o success bucket missing or wrong: %+v", entry)
 	}
 	if entry, ok := got[key{11, "vip", "claude"}]; !ok || entry.RequestSuccess != 0 || entry.RequestFailed != 2 {
-		// One failure from the Attempts entry, one from the legacy Error="" check on log #2.
+		// One failure from the Attempts entry, one from the explicit Success=false log #2.
 		t.Fatalf("account=11 claude failure bucket missing or wrong: %+v", entry)
 	}
 	for k := range got {
@@ -146,7 +160,8 @@ func TestStatsSiteModelBackfillRowTypeSkipsContentFields(t *testing.T) {
 	_ = row.ChannelId
 	_ = row.ActualModelName
 	_ = row.RequestModelName
-	_ = row.Error
+	_ = row.UseTime
+	_ = row.Success
 	_ = row.Attempts
 
 	// Reflective denylist: adding RequestContent / ResponseContent back would

@@ -4,6 +4,7 @@ import (
 	"math"
 	"testing"
 
+	"github.com/bestruirui/octopus/internal/model"
 	transformerModel "github.com/bestruirui/octopus/internal/transformer/model"
 )
 
@@ -92,5 +93,31 @@ func TestSetInternalResponseNoFallbackWhenCacheOnly(t *testing.T) {
 
 	if m.Stats.InputToken != 0 {
 		t.Fatalf("input token: got %d want 0 (cache-only is reported input)", m.Stats.InputToken)
+	}
+}
+
+func TestRelayLogErrorMarksNilErrorFailures(t *testing.T) {
+	if got := relayLogError(false, nil); got != "request failed" {
+		t.Fatalf("nil-error failure marker = %q, want request failed", got)
+	}
+	if got := relayLogError(true, nil); got != "" {
+		t.Fatalf("successful log error = %q, want empty", got)
+	}
+}
+
+func TestFinalModelUsesTerminalAttemptWhenResponseModelIsMissing(t *testing.T) {
+	attempts := []model.ChannelAttempt{
+		{ModelName: "first-model", Status: model.AttemptFailed},
+		{ModelName: "final-model", Status: model.AttemptFailed},
+	}
+	if got := finalModel("", "requested-group", attempts); got != "final-model" {
+		t.Fatalf("final model = %q, want final-model", got)
+	}
+}
+
+func TestFinalModelPrefersReportedActualModel(t *testing.T) {
+	attempts := []model.ChannelAttempt{{ModelName: "attempt-model", Status: model.AttemptSuccess}}
+	if got := finalModel("reported-model", "requested-group", attempts); got != "reported-model" {
+		t.Fatalf("final model = %q, want reported-model", got)
 	}
 }

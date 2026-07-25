@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"time"
 
@@ -28,6 +29,11 @@ const (
 )
 
 func DBExportAll(ctx context.Context, includeLogs, includeStats bool) (*model.DBDump, error) {
+	if includeStats {
+		if err := StatsSaveDB(ctx); err != nil {
+			return nil, fmt.Errorf("flush stats before export: %w", err)
+		}
+	}
 	conn := db.GetDB().WithContext(ctx)
 
 	d := &model.DBDump{
@@ -117,6 +123,12 @@ func DBExportAll(ctx context.Context, includeLogs, includeStats bool) (*model.DB
 		if err := conn.Find(&d.StatsSiteModelHourly).Error; err != nil {
 			return nil, fmt.Errorf("export stats_site_model_hourly: %w", err)
 		}
+		if err := conn.Find(&d.StatsLeaderboardHourly).Error; err != nil {
+			return nil, fmt.Errorf("export stats_leaderboard_hourly: %w", err)
+		}
+		if err := conn.Find(&d.StatsLeaderboardCoverage).Error; err != nil {
+			return nil, fmt.Errorf("export stats_leaderboard_coverage: %w", err)
+		}
 	}
 
 	if includeLogs {
@@ -159,6 +171,12 @@ func DBImportIncremental(ctx context.Context, dump *model.DBDump) (*model.DBImpo
 
 	if dump.Version != 0 && dump.Version != dbDumpVersion {
 		return nil, fmt.Errorf("unsupported dump version: %d", dump.Version)
+	}
+
+	statsImportLock.Lock()
+	defer statsImportLock.Unlock()
+	if err := statsSaveDBUnlocked(ctx); err != nil {
+		return nil, fmt.Errorf("flush stats before import: %w", err)
 	}
 
 	conn := db.GetDB().WithContext(ctx)
@@ -672,6 +690,48 @@ func DBImportIncremental(ctx context.Context, dump *model.DBDump) (*model.DBImpo
 			} else {
 				res.RowsAffected["stats_site_model_hourly"] = n
 			}
+
+			// Leaderboard channel keys refer to channel IDs, so remap those keys
+			// just like StatsChannel. Model/group keys are stable strings.
+			filteredLeaderboardHourly := make([]model.StatsLeaderboardHourly, 0, len(dump.StatsLeaderboardHourly))
+			for _, row := range dump.StatsLeaderboardHourly {
+				if row.DimensionType == model.StatsLeaderboardDimensionChannel {
+					oldID, convErr := strconv.Atoi(row.DimensionKey)
+					if convErr != nil {
+						continue
+					}
+					if oldID != 0 {
+						newID, ok := channelIDMap[oldID]
+						if !ok {
+							continue
+						}
+						row.DimensionKey = strconv.Itoa(newID)
+					}
+				}
+				filteredLeaderboardHourly = append(filteredLeaderboardHourly, row)
+			}
+			if n, err := createUpsertAll(tx, filteredLeaderboardHourly, []clause.Column{
+				{Name: "hour"}, {Name: "dimension_type"}, {Name: "dimension_key"}, {Name: "source"},
+			}); err != nil {
+				return fmt.Errorf("import stats_leaderboard_hourly: %w", err)
+			} else {
+				res.RowsAffected["stats_leaderboard_hourly"] = n
+			}
+			// Coverage is derived from the target instance's relay-log retention and
+			// must never be trusted from another instance. Invalidate it so the
+			// local startup backfill recomputes an honest coverage window.
+			if err := tx.Where("id = ?", 1).Delete(&model.StatsLeaderboardCoverage{}).Error; err != nil {
+				return fmt.Errorf("invalidate stats_leaderboard_coverage: %w", err)
+			}
+			pendingCoverage := model.StatsLeaderboardCoverage{
+				ID:      1,
+				Version: statsLeaderboardBackfillVersion,
+				Status:  model.StatsLeaderboardCoveragePending,
+			}
+			if err := tx.Create(&pendingCoverage).Error; err != nil {
+				return fmt.Errorf("reset stats_leaderboard_coverage: %w", err)
+			}
+			res.RowsAffected["stats_leaderboard_coverage"] = 1
 		}
 
 		// 16. RelayLogs (Snowflake IDs - keep createDoNothing)
@@ -688,13 +748,16 @@ func DBImportIncremental(ctx context.Context, dump *model.DBDump) (*model.DBImpo
 	if err != nil {
 		return nil, err
 	}
-	// The import transaction has already committed; cache refresh failures are non-fatal
-	// and can be recovered by a later InitCache/refresh cycle.
-	if err := proxyConfigurationRefreshCache(ctx); err != nil {
-		log.Warnw("refresh proxy configuration cache after import failed",
+	// The transaction has committed while normal stats writers were paused.
+	// Drop all unpersisted derived projections, then refresh every mutable cache
+	// before releasing the import barrier so no pre-import increment is replayed.
+	resetDerivedStatsCaches()
+	if err := refreshAllCaches(ctx); err != nil {
+		log.Errorw("refresh caches after committed database import failed",
 			"operation", "db_import_incremental",
 			"error", err,
 		)
+		return res, fmt.Errorf("database import committed but cache refresh failed: %w", err)
 	}
 	return res, nil
 }
@@ -875,6 +938,11 @@ func createUpsertSettings(tx *gorm.DB, rows []model.Setting) (int64, error) {
 // slice. The writer is consumed once; failures partway through cannot return a
 // JSON error to the client, so callers should validate inputs before invoking.
 func DBExportZip(ctx context.Context, w io.Writer, includeLogs, includeStats bool) (err error) {
+	if includeStats {
+		if err := StatsSaveDB(ctx); err != nil {
+			return fmt.Errorf("flush stats before zip export: %w", err)
+		}
+	}
 	zw := zip.NewWriter(w)
 	defer func() {
 		if closeErr := zw.Close(); closeErr != nil && err == nil {
@@ -973,6 +1041,12 @@ func DBExportZip(ctx context.Context, w io.Writer, includeLogs, includeStats boo
 			return err
 		}
 		if err := writeZipTable(ctx, zw, conn, "stats_site_model_hourly.json", &[]model.StatsSiteModelHourly{}); err != nil {
+			return err
+		}
+		if err := writeZipTable(ctx, zw, conn, "stats_leaderboard_hourly.json", &[]model.StatsLeaderboardHourly{}); err != nil {
+			return err
+		}
+		if err := writeZipTable(ctx, zw, conn, "stats_leaderboard_coverage.json", &[]model.StatsLeaderboardCoverage{}); err != nil {
 			return err
 		}
 	}

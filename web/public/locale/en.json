@@ -44,6 +44,7 @@
     "supportedModels": "Supported Models"
   },
   "navbar": {
+    "navigation": "Main navigation",
     "home": "Home",
     "site": "Site",
     "channel": "Channel",
@@ -117,6 +118,8 @@
       "noData": "No Data"
     },
     "summary": {
+      "periodLabel": "Statistics period",
+      "loadError": "Some statistics could not be refreshed; available data is still shown.",
       "periods": {
         "today": "Today",
         "last7Days": "7 days",
@@ -137,11 +140,30 @@
     },
     "rank": {
       "title": "Ranking",
+      "description": "Final requests by model, channel, or request group",
+      "dimensionLabel": "Leaderboard dimension",
+      "sortLabel": "Leaderboard sort",
+      "modelMode": "Model",
+      "channelMode": "Channel",
+      "groupMode": "Group",
       "sortByCost": "Cost",
       "sortByCount": "Count",
       "sortByTokens": "Tokens",
+      "sortByFailed": "Failed",
       "noData": "No ranking data",
-      "successRate": "Success Rate"
+      "successRate": "Success Rate",
+      "loading": "Loading leaderboard",
+      "error": "Unable to load leaderboard",
+      "staleError": "The latest leaderboard refresh failed; showing the last available data.",
+      "retry": "Retry",
+      "coveragePending": "Historical coverage is still being prepared",
+      "coverageFailed": "Historical coverage could not be prepared",
+      "coveragePartial": "Historical coverage is partial",
+      "coverageFrom": "Historical coverage available from {date}",
+      "page": "Page {current} of {total}",
+      "previous": "Previous page",
+      "next": "Next page",
+      "rankLabel": "Rank {rank}"
     },
     "groupHealth": {
       "title": "Group Health",

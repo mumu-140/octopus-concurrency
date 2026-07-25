@@ -151,6 +151,72 @@ export function useStatsTotal() {
 }
 
 
+export type LeaderboardDimension = 'model' | 'channel' | 'group';
+export type LeaderboardWindow = 'today' | '7' | '30' | 'all';
+
+export interface LeaderboardCoverage {
+    status: string;
+    complete: boolean;
+    earliest_event_at: number;
+    backfill_cutoff: number;
+    completed_at: number;
+}
+
+interface LeaderboardRow extends StatsMetrics {
+    key: string;
+    name: string;
+    last_request_at: number;
+}
+
+export interface LeaderboardEntry {
+    key: string;
+    name: string;
+    last_request_at: number;
+    formatted: StatsMetricsFormatted;
+}
+
+export interface LeaderboardResult {
+    rows: LeaderboardEntry[];
+    coverage: LeaderboardCoverage;
+}
+
+/**
+ * 获取最终请求排行榜。后端按模型、渠道或请求分组聚合，窗口使用与首页图表相同的口径。
+ */
+export function useLeaderboard(dimension: LeaderboardDimension, window: LeaderboardWindow) {
+    return useQuery({
+        queryKey: ['stats', 'leaderboard', dimension, window],
+        queryFn: async () => {
+            return apiClient.get<{
+                rows: LeaderboardRow[];
+                coverage: LeaderboardCoverage;
+            }>('/api/v1/stats/leaderboard', { dimension, window });
+        },
+        select: (data): LeaderboardResult => ({
+            rows: data.rows.map((item): LeaderboardEntry => ({
+                key: item.key,
+                name: item.name,
+                last_request_at: item.last_request_at,
+                formatted: {
+                    input_token: formatCount(item.input_token),
+                    output_token: formatCount(item.output_token),
+                    total_token: formatCount(item.input_token + item.output_token),
+                    input_cost: formatMoney(item.input_cost),
+                    output_cost: formatMoney(item.output_cost),
+                    total_cost: formatMoney(item.input_cost + item.output_cost),
+                    wait_time: formatTime(item.wait_time),
+                    request_success: formatCount(item.request_success),
+                    request_failed: formatCount(item.request_failed),
+                    request_count: formatCount(item.request_success + item.request_failed),
+                },
+            })),
+            coverage: data.coverage,
+        }),
+        refetchInterval: 30000,
+    });
+}
+
+
 
 /**
  * 获取 API Key 统计数据列表 Hook

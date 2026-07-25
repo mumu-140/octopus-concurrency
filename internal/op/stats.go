@@ -18,6 +18,11 @@ import (
 var statsDailyCache model.StatsDaily
 var statsDailyCacheLock sync.RWMutex
 
+// statsImportLock is held for reading by normal stats writes and for writing
+// during a backup import. This prevents an import from racing with a request
+// that is still updating in-memory counters or with the periodic stats flush.
+var statsImportLock sync.RWMutex
+
 var statsTotalCache model.StatsTotal
 var statsTotalCacheLock sync.RWMutex
 
@@ -86,6 +91,12 @@ func StatsSaveDBTask() {
 }
 
 func StatsSaveDB(ctx context.Context) error {
+	statsImportLock.RLock()
+	defer statsImportLock.RUnlock()
+	return statsSaveDBUnlocked(ctx)
+}
+
+func statsSaveDBUnlocked(ctx context.Context) error {
 	if err := flushPendingDailyOverrides(ctx); err != nil {
 		return err
 	}
@@ -134,6 +145,27 @@ func StatsSaveDB(ctx context.Context) error {
 		return err
 	}
 	return nil
+}
+
+// resetDerivedStatsCaches clears only in-memory projections that are not
+// loaded by statsRefreshCache. It is used after importing a database so rows
+// created before the import cannot be added a second time on a later flush.
+func resetDerivedStatsCaches() {
+	leaderboardHourlyFlushLock.Lock()
+	leaderboardHourlyCacheLock.Lock()
+	leaderboardHourlyCache = make(map[leaderboardHourlyKey]*model.StatsLeaderboardHourly)
+	leaderboardHourlyCacheLock.Unlock()
+	leaderboardHourlyFlushLock.Unlock()
+
+	siteModelHourlyFlushLock.Lock()
+	siteModelHourlyCacheLock.Lock()
+	siteModelHourlyCache = make(map[siteModelHourlyKey]*model.StatsSiteModelHourly)
+	siteModelHourlyCacheLock.Unlock()
+	siteModelHourlyFlushLock.Unlock()
+
+	pendingDailyOverridesLock.Lock()
+	pendingDailyOverrides = nil
+	pendingDailyOverridesLock.Unlock()
 }
 
 func persistStatsSnapshots(
@@ -218,6 +250,9 @@ func persistStatsSnapshots(
 	}
 
 	if err := StatsSiteModelHourlySaveDB(ctx); err != nil {
+		return err
+	}
+	if err := StatsLeaderboardHourlySaveDB(ctx); err != nil {
 		return err
 	}
 
@@ -321,6 +356,12 @@ func StatsTotalUpdate(metrics model.StatsMetrics) error {
 }
 
 func StatsChannelUpdate(channelID int, metrics model.StatsMetrics) error {
+	if channelID <= 0 {
+		return nil
+	}
+	statsImportLock.RLock()
+	defer statsImportLock.RUnlock()
+
 	channelCache, ok := statsChannelCache.Get(channelID)
 	if !ok {
 		channelCache = model.StatsChannel{
@@ -355,6 +396,9 @@ func StatsHourlyUpdate(metrics model.StatsMetrics) error {
 }
 
 func StatsModelUpdate(stats model.StatsModel) error {
+	statsImportLock.RLock()
+	defer statsImportLock.RUnlock()
+
 	modelCache, ok := statsModelCache.Get(stats.ID)
 	if !ok {
 		modelCache = model.StatsModel{

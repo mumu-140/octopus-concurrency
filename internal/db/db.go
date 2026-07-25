@@ -90,6 +90,8 @@ func InitDB(dbType, dsn string, debug bool) error {
 		&model.StatsChannel{},
 		&model.StatsAPIKey{},
 		&model.StatsSiteModelHourly{},
+		&model.StatsLeaderboardHourly{},
+		&model.StatsLeaderboardCoverage{},
 		&model.GroupHealthSnapshot{},
 		&model.GroupHealthAttempt{},
 		&model.WSResponseAffinity{},

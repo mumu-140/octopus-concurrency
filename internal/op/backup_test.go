@@ -185,6 +185,11 @@ func TestDBImportSkipsOrphanedStats(t *testing.T) {
 	dump.StatsAPIKey = []model.StatsAPIKey{
 		{APIKeyID: 999, StatsMetrics: model.StatsMetrics{RequestSuccess: 2}},
 	}
+	dump.StatsLeaderboardHourly = []model.StatsLeaderboardHourly{
+		{Hour: 1, DimensionType: model.StatsLeaderboardDimensionChannel, DimensionKey: "0", DimensionName: "unassigned", Source: model.StatsLeaderboardSourceLive},
+		{Hour: 1, DimensionType: model.StatsLeaderboardDimensionChannel, DimensionKey: "1", DimensionName: "test-channel", Source: model.StatsLeaderboardSourceLive},
+		{Hour: 1, DimensionType: model.StatsLeaderboardDimensionChannel, DimensionKey: "999", DimensionName: "orphan", Source: model.StatsLeaderboardSourceLive},
+	}
 
 	result, err := DBImportIncremental(ctx, dump)
 	if err != nil {
@@ -198,6 +203,18 @@ func TestDBImportSkipsOrphanedStats(t *testing.T) {
 	}
 	if result.RowsAffected["stats_api_key"] != 0 {
 		t.Fatalf("expected 0 stats_api_key imported, got %d", result.RowsAffected["stats_api_key"])
+	}
+	if result.RowsAffected["stats_leaderboard_hourly"] != 2 {
+		t.Fatalf("expected unassigned and mapped leaderboard rows, got %d", result.RowsAffected["stats_leaderboard_hourly"])
+	}
+	var unassignedCount int64
+	if err := dbpkg.GetDB().Model(&model.StatsLeaderboardHourly{}).
+		Where("dimension_type = ? AND dimension_key = ?", model.StatsLeaderboardDimensionChannel, "0").
+		Count(&unassignedCount).Error; err != nil {
+		t.Fatalf("count unassigned leaderboard row failed: %v", err)
+	}
+	if unassignedCount != 1 {
+		t.Fatalf("expected unassigned leaderboard row to survive import, got %d", unassignedCount)
 	}
 }
 
@@ -339,5 +356,92 @@ func TestDBExportZipContainsRelayLogsNDJSON(t *testing.T) {
 	}
 	if linesCount(ndjson) != 2 {
 		t.Fatalf("expected 2 ndjson lines, got %d (%q)", linesCount(ndjson), ndjson)
+	}
+}
+
+func TestDBExportAllFlushesPendingLeaderboardStats(t *testing.T) {
+	ctx := setupBackupTestDB(t)
+	resetStatsLeaderboardTestState(t, ctx)
+
+	key := leaderboardHourlyKey{
+		Hour:          1,
+		DimensionType: model.StatsLeaderboardDimensionModel,
+		DimensionKey:  "model-export",
+		Source:        model.StatsLeaderboardSourceLive,
+	}
+	leaderboardHourlyCacheLock.Lock()
+	leaderboardHourlyCache[key] = &model.StatsLeaderboardHourly{
+		Hour:          key.Hour,
+		DimensionType: key.DimensionType,
+		DimensionKey:  key.DimensionKey,
+		DimensionName: "model-export",
+		Source:        key.Source,
+		Date:          "20260725",
+		StatsMetrics:  model.StatsMetrics{RequestSuccess: 1},
+	}
+	leaderboardHourlyCacheLock.Unlock()
+
+	dump, err := DBExportAll(ctx, false, true)
+	if err != nil {
+		t.Fatalf("DBExportAll failed: %v", err)
+	}
+	if len(dump.StatsLeaderboardHourly) != 1 || dump.StatsLeaderboardHourly[0].RequestSuccess != 1 {
+		t.Fatalf("export omitted pending leaderboard stats: %+v", dump.StatsLeaderboardHourly)
+	}
+	leaderboardHourlyCacheLock.Lock()
+	pending := len(leaderboardHourlyCache)
+	leaderboardHourlyCacheLock.Unlock()
+	if pending != 0 {
+		t.Fatalf("leaderboard cache still has %d rows after export flush", pending)
+	}
+}
+
+func TestDBImportDropsPreImportLeaderboardPendingState(t *testing.T) {
+	ctx := setupBackupTestDB(t)
+	resetStatsLeaderboardTestState(t, ctx)
+
+	key := leaderboardHourlyKey{
+		Hour:          1,
+		DimensionType: model.StatsLeaderboardDimensionModel,
+		DimensionKey:  "model-import",
+		Source:        model.StatsLeaderboardSourceLive,
+	}
+	leaderboardHourlyCacheLock.Lock()
+	leaderboardHourlyCache[key] = &model.StatsLeaderboardHourly{
+		Hour:          key.Hour,
+		DimensionType: key.DimensionType,
+		DimensionKey:  key.DimensionKey,
+		DimensionName: "model-import",
+		Source:        key.Source,
+		Date:          "20260725",
+		StatsMetrics:  model.StatsMetrics{RequestSuccess: 5},
+	}
+	leaderboardHourlyCacheLock.Unlock()
+
+	dump := buildTestDump()
+	dump.IncludeStats = true
+	dump.StatsLeaderboardHourly = []model.StatsLeaderboardHourly{{
+		Hour:          key.Hour,
+		DimensionType: key.DimensionType,
+		DimensionKey:  key.DimensionKey,
+		DimensionName: "model-import",
+		Source:        key.Source,
+		Date:          "20260725",
+		StatsMetrics:  model.StatsMetrics{RequestSuccess: 2},
+	}}
+	if _, err := DBImportIncremental(ctx, dump); err != nil {
+		t.Fatalf("DBImportIncremental failed: %v", err)
+	}
+
+	result, err := StatsLeaderboardQuery(ctx, model.StatsLeaderboardDimensionModel, StatsLeaderboardWindowAll)
+	if err != nil {
+		t.Fatalf("StatsLeaderboardQuery failed: %v", err)
+	}
+	row := leaderboardRowByKey(t, result, "model-import")
+	if row.RequestSuccess != 2 {
+		t.Fatalf("pre-import pending state was replayed: got %d requests, want imported 2", row.RequestSuccess)
+	}
+	if result.Coverage.Status != model.StatsLeaderboardCoveragePending {
+		t.Fatalf("imported coverage status = %q, want pending", result.Coverage.Status)
 	}
 }

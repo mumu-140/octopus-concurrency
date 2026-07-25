@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -107,8 +108,16 @@ func setSetting(c *gin.Context) {
 }
 
 func exportDB(c *gin.Context) {
-	includeLogs, _ := strconv.ParseBool(c.DefaultQuery("include_logs", "false"))
-	includeStats, _ := strconv.ParseBool(c.DefaultQuery("include_stats", "false"))
+	includeLogs, err := parseOptionalBoolQuery(c, "include_logs")
+	if err != nil {
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	includeStats, err := parseOptionalBoolQuery(c, "include_stats")
+	if err != nil {
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
 	format := strings.ToLower(strings.TrimSpace(c.DefaultQuery("format", "json")))
 	if format != "json" && format != "zip" {
 		resp.Error(c, http.StatusBadRequest, "invalid format")
@@ -188,11 +197,19 @@ func importDB(c *gin.Context) {
 		return
 	}
 
-	if err := op.InitCache(); err != nil {
-		log.Warnf("cache refresh after import failed: %v", err)
-	}
-
 	resp.Success(c, result)
+}
+
+func parseOptionalBoolQuery(c *gin.Context, key string) (bool, error) {
+	raw, ok := c.GetQuery(key)
+	if !ok || strings.TrimSpace(raw) == "" {
+		return false, nil
+	}
+	value, err := strconv.ParseBool(raw)
+	if err != nil {
+		return false, fmt.Errorf("invalid %s: expected true or false", key)
+	}
+	return value, nil
 }
 
 func decodeDBDump(body []byte, dump *model.DBDump) error {

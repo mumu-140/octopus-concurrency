@@ -31,13 +31,15 @@ type DBDump struct {
 	ChannelModelProtocolOverrides []ChannelModelProtocolOverride `json:"channel_model_protocol_overrides,omitempty"`
 	ChannelProtocolProfiles       []ChannelProtocolProfile       `json:"channel_protocol_profiles,omitempty"`
 
-	StatsTotal           []StatsTotal           `json:"stats_total,omitempty"`
-	StatsDaily           []StatsDaily           `json:"stats_daily,omitempty"`
-	StatsHourly          []StatsHourly          `json:"stats_hourly,omitempty"`
-	StatsModel           []StatsModel           `json:"stats_model,omitempty"`
-	StatsChannel         []StatsChannel         `json:"stats_channel,omitempty"`
-	StatsAPIKey          []StatsAPIKey          `json:"stats_api_key,omitempty"`
-	StatsSiteModelHourly []StatsSiteModelHourly `json:"stats_site_model_hourly,omitempty"`
+	StatsTotal               []StatsTotal               `json:"stats_total,omitempty"`
+	StatsDaily               []StatsDaily               `json:"stats_daily,omitempty"`
+	StatsHourly              []StatsHourly              `json:"stats_hourly,omitempty"`
+	StatsModel               []StatsModel               `json:"stats_model,omitempty"`
+	StatsChannel             []StatsChannel             `json:"stats_channel,omitempty"`
+	StatsAPIKey              []StatsAPIKey              `json:"stats_api_key,omitempty"`
+	StatsSiteModelHourly     []StatsSiteModelHourly     `json:"stats_site_model_hourly,omitempty"`
+	StatsLeaderboardHourly   []StatsLeaderboardHourly   `json:"stats_leaderboard_hourly,omitempty"`
+	StatsLeaderboardCoverage []StatsLeaderboardCoverage `json:"stats_leaderboard_coverage,omitempty"`
 
 	RelayLogs []RelayLog `json:"relay_logs,omitempty"`
 }

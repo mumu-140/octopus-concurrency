@@ -3,7 +3,6 @@ package op
 import (
 	"context"
 	"errors"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -38,9 +37,18 @@ type siteModelHourlyKey struct {
 var siteModelHourlyCache = make(map[siteModelHourlyKey]*model.StatsSiteModelHourly)
 var siteModelHourlyCacheLock sync.Mutex
 
+// siteModelHourlyFlushLock keeps a query from observing the gap between
+// detaching pending buckets and committing them to the database.
+var siteModelHourlyFlushLock sync.RWMutex
+
 // StatsSiteModelHourlyUpdate 记录一次站点渠道请求到对应小时桶。
 // 非站点渠道（无绑定）会被静默忽略。
 func StatsSiteModelHourlyUpdate(channelID int, actualModel string, metrics model.StatsMetrics) {
+	statsImportLock.RLock()
+	defer statsImportLock.RUnlock()
+	siteModelHourlyFlushLock.RLock()
+	defer siteModelHourlyFlushLock.RUnlock()
+
 	actualModel = strings.TrimSpace(actualModel)
 	if channelID == 0 || actualModel == "" {
 		return
@@ -113,20 +121,25 @@ func StatsSiteModelHourlyRecordAttempts(attempts []model.ChannelAttempt, fallbac
 // StatsSiteModelHourlySaveDB 把内存桶批量 upsert 入库。
 // 由 stats 后台任务调用。
 func StatsSiteModelHourlySaveDB(ctx context.Context) error {
+	siteModelHourlyFlushLock.Lock()
+	defer siteModelHourlyFlushLock.Unlock()
+
 	siteModelHourlyCacheLock.Lock()
 	if len(siteModelHourlyCache) == 0 {
 		siteModelHourlyCacheLock.Unlock()
 		return nil
 	}
-	rows := make([]model.StatsSiteModelHourly, 0, len(siteModelHourlyCache))
-	for _, entry := range siteModelHourlyCache {
-		rows = append(rows, *entry)
-	}
+	snapshot := siteModelHourlyCache
 	siteModelHourlyCache = make(map[siteModelHourlyKey]*model.StatsSiteModelHourly)
 	siteModelHourlyCacheLock.Unlock()
 
+	rows := make([]model.StatsSiteModelHourly, 0, len(snapshot))
+	for _, entry := range snapshot {
+		rows = append(rows, *entry)
+	}
+
 	dbConn := db.GetDB().WithContext(ctx)
-	return dbConn.Clauses(clause.OnConflict{
+	err := dbConn.Clauses(clause.OnConflict{
 		Columns: []clause.Column{
 			{Name: "hour"}, {Name: "site_account_id"}, {Name: "group_key"}, {Name: "model_name"},
 		},
@@ -142,202 +155,27 @@ func StatsSiteModelHourlySaveDB(ctx context.Context) error {
 			"last_request_at": gorm.Expr("MAX(stats_site_model_hourlies.last_request_at, EXCLUDED.last_request_at)"),
 		}),
 	}).Create(&rows).Error
-}
-
-const siteChannelModelHistoryWindow = 90 * 24 * time.Hour
-
-// SiteChannelModelHourlyForAccount 读取指定 site account 下最近一段时间的 (group, model) 小时聚合，
-// 合并未刷盘的内存桶后，按自适应桶宽生成 SiteModelHistorySummary。
-// key 与 site_channel.go 保持一致：baseGroupKey + "\x00" + modelName。
-func SiteChannelModelHourlyForAccount(ctx context.Context, siteAccountID int) (map[string]*model.SiteModelHistorySummary, error) {
-	result, err := SiteChannelModelHourlyForAccounts(ctx, []int{siteAccountID})
-	if err != nil {
-		return nil, err
-	}
-	if result[siteAccountID] == nil {
-		return map[string]*model.SiteModelHistorySummary{}, nil
-	}
-	return result[siteAccountID], nil
-}
-
-func SiteChannelModelHourlyForAccounts(ctx context.Context, siteAccountIDs []int) (map[int]map[string]*model.SiteModelHistorySummary, error) {
-	if len(siteAccountIDs) == 0 {
-		return map[int]map[string]*model.SiteModelHistorySummary{}, nil
-	}
-	accountSet := make(map[int]struct{}, len(siteAccountIDs))
-	ids := make([]int, 0, len(siteAccountIDs))
-	for _, id := range siteAccountIDs {
-		if id <= 0 {
-			continue
-		}
-		if _, ok := accountSet[id]; ok {
-			continue
-		}
-		accountSet[id] = struct{}{}
-		ids = append(ids, id)
-	}
-	if len(ids) == 0 {
-		return map[int]map[string]*model.SiteModelHistorySummary{}, nil
+	if err == nil {
+		return nil
 	}
 
-	minHour := int(time.Now().Add(-siteChannelModelHistoryWindow).Unix() / 3600)
-	var rows []model.StatsSiteModelHourly
-	if err := db.GetDB().WithContext(ctx).
-		Where("site_account_id IN ? AND hour >= ?", ids, minHour).
-		Order("site_account_id ASC").
-		Order("hour ASC").
-		Find(&rows).Error; err != nil {
-		return nil, err
-	}
-
-	// 合并尚未刷盘的内存桶。
+	// A failed write must not discard the detached snapshot. Updates cannot
+	// enter while the flush barrier is held, but merge defensively so this stays
+	// correct if the locking scope changes later.
 	siteModelHourlyCacheLock.Lock()
-	pending := make([]model.StatsSiteModelHourly, 0, len(siteModelHourlyCache))
-	for k, entry := range siteModelHourlyCache {
-		if _, ok := accountSet[k.SiteAccountID]; ok && k.Hour >= minHour {
-			pending = append(pending, *entry)
+	for key, row := range snapshot {
+		if current, ok := siteModelHourlyCache[key]; ok {
+			current.StatsMetrics.Add(row.StatsMetrics)
+			if row.LastRequestAt > current.LastRequestAt {
+				current.LastRequestAt = row.LastRequestAt
+			}
+		} else {
+			copyRow := *row
+			siteModelHourlyCache[key] = &copyRow
 		}
 	}
 	siteModelHourlyCacheLock.Unlock()
-
-	type compositeKey struct {
-		SiteAccountID int
-		Hour          int
-		GroupKey      string
-		ModelName     string
-	}
-	merged := make(map[compositeKey]*model.StatsSiteModelHourly, len(rows)+len(pending))
-	add := func(r model.StatsSiteModelHourly) {
-		k := compositeKey{SiteAccountID: r.SiteAccountID, Hour: r.Hour, GroupKey: r.GroupKey, ModelName: r.ModelName}
-		if existing, ok := merged[k]; ok {
-			existing.StatsMetrics.Add(r.StatsMetrics)
-			if r.LastRequestAt > existing.LastRequestAt {
-				existing.LastRequestAt = r.LastRequestAt
-			}
-			return
-		}
-		copyRow := r
-		merged[k] = &copyRow
-	}
-	for _, r := range rows {
-		add(r)
-	}
-	for _, r := range pending {
-		add(r)
-	}
-
-	type groupedSeries struct {
-		GroupKey  string
-		ModelName string
-		Hours     []model.StatsSiteModelHourly
-	}
-	groupedByAccount := make(map[int]map[string]*groupedSeries)
-	for _, entry := range merged {
-		key := entry.GroupKey + "\x00" + entry.ModelName
-		grouped := groupedByAccount[entry.SiteAccountID]
-		if grouped == nil {
-			grouped = make(map[string]*groupedSeries)
-			groupedByAccount[entry.SiteAccountID] = grouped
-		}
-		series, ok := grouped[key]
-		if !ok {
-			series = &groupedSeries{GroupKey: entry.GroupKey, ModelName: entry.ModelName}
-			grouped[key] = series
-		}
-		series.Hours = append(series.Hours, *entry)
-	}
-
-	result := make(map[int]map[string]*model.SiteModelHistorySummary, len(ids))
-	for _, id := range ids {
-		result[id] = make(map[string]*model.SiteModelHistorySummary)
-	}
-	for accountID, grouped := range groupedByAccount {
-		accountResult := result[accountID]
-		if accountResult == nil {
-			accountResult = make(map[string]*model.SiteModelHistorySummary, len(grouped))
-			result[accountID] = accountResult
-		}
-		for key, series := range grouped {
-			sort.Slice(series.Hours, func(i, j int) bool {
-				return series.Hours[i].Hour < series.Hours[j].Hour
-			})
-			accountResult[key] = buildSiteModelSummary(series.Hours)
-		}
-	}
-	return result, nil
-}
-
-// buildSiteModelSummary 把按时间排序的小时记录聚合为 SiteModelHistorySummary，
-// 自适应选择桶宽。
-func buildSiteModelSummary(hours []model.StatsSiteModelHourly) *model.SiteModelHistorySummary {
-	summary := &model.SiteModelHistorySummary{}
-	if len(hours) == 0 {
-		return summary
-	}
-
-	var maxLast int64
-	for i := range hours {
-		summary.SuccessCount += int(hours[i].RequestSuccess)
-		summary.FailureCount += int(hours[i].RequestFailed)
-		if hours[i].LastRequestAt > maxLast {
-			maxLast = hours[i].LastRequestAt
-		}
-	}
-
-	earliestHour := hours[0].Hour
-	latestHour := hours[len(hours)-1].Hour
-	if maxLast > 0 {
-		summary.LastRequestAt = &maxLast
-	} else {
-		// 兼容老数据：fallback 到该 hour 最后一秒
-		latestSec := int64(latestHour+1)*3600 - 1
-		summary.LastRequestAt = &latestSec
-	}
-	spanSeconds := int64((latestHour - earliestHour + 1) * 3600)
-
-	bucketSpan := chooseBucketSpan(spanSeconds)
-	summary.BucketSpan = bucketSpan
-
-	bucketMap := make(map[int64]*model.SiteModelHistoryBucket)
-	for _, h := range hours {
-		hourStart := int64(h.Hour) * 3600
-		bucketStart := hourStart - hourStart%int64(bucketSpan)
-		bucket, ok := bucketMap[bucketStart]
-		if !ok {
-			bucket = &model.SiteModelHistoryBucket{Time: bucketStart}
-			bucketMap[bucketStart] = bucket
-		}
-		bucket.Success += int(h.RequestSuccess)
-		bucket.Failure += int(h.RequestFailed)
-	}
-
-	buckets := make([]model.SiteModelHistoryBucket, 0, len(bucketMap))
-	for _, b := range bucketMap {
-		buckets = append(buckets, *b)
-	}
-	sort.Slice(buckets, func(i, j int) bool {
-		return buckets[i].Time < buckets[j].Time
-	})
-	summary.Buckets = buckets
-	return summary
-}
-
-func chooseBucketSpan(spanSeconds int64) int {
-	const (
-		hour = int64(3600)
-		day  = 24 * hour
-		week = 7 * day
-	)
-	switch {
-	case spanSeconds <= 24*hour:
-		return int(hour)
-	case spanSeconds <= 7*day:
-		return int(6 * hour)
-	case spanSeconds <= 30*day:
-		return int(day)
-	default:
-		return int(week)
-	}
+	return err
 }
 
 // lookupChannelSiteBinding 查询并缓存 channelID → 站点绑定信息。

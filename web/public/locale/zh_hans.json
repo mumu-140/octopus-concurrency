@@ -44,6 +44,7 @@
     "supportedModels": "支持的模型"
   },
   "navbar": {
+    "navigation": "主导航",
     "home": "主页",
     "site": "站点",
     "channel": "渠道",
@@ -117,6 +118,8 @@
       "noData": "无数据"
     },
     "summary": {
+      "periodLabel": "统计时间范围",
+      "loadError": "部分统计刷新失败，现有数据仍保留显示。",
       "periods": {
         "today": "今日",
         "last7Days": "7 天",
@@ -137,11 +140,30 @@
     },
     "rank": {
       "title": "排行榜",
+      "description": "按模型、渠道或请求分组统计最终请求",
+      "dimensionLabel": "排行榜维度",
+      "sortLabel": "排行榜排序",
+      "modelMode": "模型",
+      "channelMode": "渠道",
+      "groupMode": "分组",
       "sortByCost": "金额",
       "sortByCount": "次数",
       "sortByTokens": "Tokens",
+      "sortByFailed": "失败",
       "noData": "暂无排行数据",
-      "successRate": "成功率"
+      "successRate": "成功率",
+      "loading": "正在加载排行榜",
+      "error": "排行榜加载失败",
+      "staleError": "排行榜最新数据刷新失败，当前显示上次可用数据。",
+      "retry": "重试",
+      "coveragePending": "历史覆盖范围仍在准备中",
+      "coverageFailed": "历史覆盖范围准备失败",
+      "coveragePartial": "历史覆盖范围不完整",
+      "coverageFrom": "历史数据从 {date} 开始可用",
+      "page": "第 {current} / {total} 页",
+      "previous": "上一页",
+      "next": "下一页",
+      "rankLabel": "第 {rank} 名"
     },
     "groupHealth": {
       "title": "分组健康",

@@ -3,6 +3,7 @@ package handlers
 import (
 	"net/http"
 
+	"github.com/bestruirui/octopus/internal/model"
 	"github.com/bestruirui/octopus/internal/op"
 	"github.com/bestruirui/octopus/internal/server/middleware"
 	"github.com/bestruirui/octopus/internal/server/resp"
@@ -32,6 +33,10 @@ func init() {
 		AddRoute(
 			router.NewRoute("/apikey", http.MethodGet).
 				Handle(getStatsAPIKey),
+		).
+		AddRoute(
+			router.NewRoute("/leaderboard", http.MethodGet).
+				Handle(getStatsLeaderboard),
 		)
 }
 
@@ -58,4 +63,23 @@ func getStatsTotal(c *gin.Context) {
 
 func getStatsAPIKey(c *gin.Context) {
 	resp.Success(c, op.StatsAPIKeyList())
+}
+
+func getStatsLeaderboard(c *gin.Context) {
+	dimension := c.DefaultQuery("dimension", model.StatsLeaderboardDimensionChannel)
+	window := op.StatsLeaderboardWindow(c.DefaultQuery("window", string(op.StatsLeaderboardWindowAll)))
+	if !op.StatsLeaderboardDimensionValid(dimension) {
+		resp.Error(c, http.StatusBadRequest, "invalid leaderboard dimension")
+		return
+	}
+	if !op.StatsLeaderboardWindowValid(window) {
+		resp.Error(c, http.StatusBadRequest, "invalid leaderboard window")
+		return
+	}
+	result, err := op.StatsLeaderboardQuery(c.Request.Context(), dimension, window)
+	if err != nil {
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	resp.Success(c, result)
 }

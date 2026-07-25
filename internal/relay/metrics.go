@@ -3,6 +3,7 @@ package relay
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/bestruirui/octopus/internal/conf"
@@ -148,10 +149,15 @@ func (m *RelayMetrics) SaveWithChannelStats(ctx context.Context, success bool, e
 	}
 
 	channelID, channelName := finalChannel(attempts)
-	op.StatsTotalUpdate(globalStats)
-	op.StatsHourlyUpdate(globalStats)
-	op.StatsDailyUpdate(context.Background(), globalStats)
-	op.StatsAPIKeyUpdate(m.APIKeyID, globalStats)
+	m.ActualModel = finalModel(m.ActualModel, m.RequestModel, attempts)
+	op.RecordStatsEvent(ctx, op.StatsLeaderboardEvent{
+		APIKeyID:     m.APIKeyID,
+		RequestModel: m.RequestModel,
+		ActualModel:  m.ActualModel,
+		ChannelID:    channelID,
+		ChannelName:  channelName,
+		Metrics:      globalStats,
+	})
 	if updateChannelStats {
 		op.StatsChannelUpdate(channelID, globalStats)
 	} else {
@@ -199,6 +205,22 @@ func (m *RelayMetrics) SaveWithChannelStats(ctx context.Context, success bool, e
 	}
 
 	m.saveLog(ctx, success, err, duration, attempts, channelID, channelName)
+}
+
+func finalModel(actualModel, requestModel string, attempts []model.ChannelAttempt) string {
+	if value := strings.TrimSpace(actualModel); value != "" {
+		return value
+	}
+	for i := len(attempts) - 1; i >= 0; i-- {
+		attempt := attempts[i]
+		if attempt.Status != model.AttemptSuccess && attempt.Status != model.AttemptFailed {
+			continue
+		}
+		if value := strings.TrimSpace(attempt.ModelName); value != "" {
+			return value
+		}
+	}
+	return strings.TrimSpace(requestModel)
 }
 
 func finalChannel(attempts []model.ChannelAttempt) (int, string) {
@@ -274,15 +296,24 @@ func (m *RelayMetrics) saveLog(ctx context.Context, success bool, err error, dur
 		}
 	}
 
-	// 错误信息
-	if err != nil {
-		relayLog.Error = err.Error()
-	}
+	// 错误信息。失败日志必须始终带有明确标记；Success 是状态真值，
+	// Error 只用于诊断，不能再通过“空错误”反推成功。
+	relayLog.Error = relayLogError(success, err)
 	relayLog.Success = success
 
 	if logErr := op.RelayLogAdd(ctx, relayLog); logErr != nil {
 		log.Warnf("failed to save relay log: %v", logErr)
 	}
+}
+
+func relayLogError(success bool, err error) string {
+	if err != nil {
+		return err.Error()
+	}
+	if !success {
+		return "request failed"
+	}
+	return ""
 }
 
 func updateFinalChannelUsageStats(channelID int, metrics model.StatsMetrics) {

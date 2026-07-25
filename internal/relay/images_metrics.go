@@ -82,10 +82,15 @@ func (m *imagesRelayMetrics) SaveWithChannelStats(ctx context.Context, success b
 	}
 
 	channelID, channelName := finalChannel(attempts)
-	op.StatsTotalUpdate(globalStats)
-	op.StatsHourlyUpdate(globalStats)
-	op.StatsDailyUpdate(context.Background(), globalStats)
-	op.StatsAPIKeyUpdate(m.APIKeyID, globalStats)
+	m.ActualModel = finalModel(m.ActualModel, m.RequestModel, attempts)
+	op.RecordStatsEvent(ctx, op.StatsLeaderboardEvent{
+		APIKeyID:     m.APIKeyID,
+		RequestModel: m.RequestModel,
+		ActualModel:  m.ActualModel,
+		ChannelID:    channelID,
+		ChannelName:  channelName,
+		Metrics:      globalStats,
+	})
 	if updateChannelStats {
 		op.StatsChannelUpdate(channelID, globalStats)
 	} else {
@@ -153,9 +158,7 @@ func (m *imagesRelayMetrics) saveLog(ctx context.Context, success bool, err erro
 		relayLog.Cost = m.Stats.InputCost + m.Stats.OutputCost
 	}
 
-	if err != nil {
-		relayLog.Error = err.Error()
-	}
+	relayLog.Error = relayLogError(success, err)
 	relayLog.Success = success
 
 	if logErr := op.RelayLogAdd(ctx, relayLog); logErr != nil {

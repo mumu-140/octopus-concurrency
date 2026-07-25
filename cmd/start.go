@@ -23,7 +23,10 @@ var cfgFile string
 // 自我退出留的最长时间。docker stop 默认 grace period 10s，给 SQLite 的
 // sqlite3_interrupt 留出 ~3s 应对正在进行的 CREATE INDEX，其它时间留给后续
 // shutdown hook（db.Close 等）。
-const ensureIndexShutdownGrace = 3 * time.Second
+const (
+	ensureIndexShutdownGrace  = 3 * time.Second
+	statsHistoryShutdownGrace = 10 * time.Second
+)
 
 var startCmd = &cobra.Command{
 	Use:   "start",
@@ -83,8 +86,27 @@ var startCmd = &cobra.Command{
 
 		task.Init()
 		safe.Go("task-runner", task.RUN)
-		safe.Go("stats-site-model-backfill", func() {
-			op.StatsSiteModelBackfill(cmd.Context())
+
+		statsHistoryCtx, stopStatsHistory := context.WithCancel(context.Background())
+		statsHistoryDone := make(chan struct{})
+		shutdown.Register(func() error {
+			stopStatsHistory()
+			select {
+			case <-statsHistoryDone:
+				return nil
+			case <-time.After(statsHistoryShutdownGrace):
+				log.Warnf("stats-history-backfill did not exit within %s; continuing shutdown anyway", statsHistoryShutdownGrace)
+				return nil
+			}
+		})
+		safe.Go("stats-history-backfill", func() {
+			defer close(statsHistoryDone)
+			// Both projections scan relay_logs and SQLite has a single writer. Run
+			// them sequentially so startup history work cannot contend with itself.
+			op.StatsSiteModelBackfill(statsHistoryCtx)
+			if statsHistoryCtx.Err() == nil {
+				op.StatsLeaderboardBackfill(statsHistoryCtx)
+			}
 		})
 
 		// relay-log-ensure-indexes 是一个有限任务，但 CREATE INDEX 期间会持有
