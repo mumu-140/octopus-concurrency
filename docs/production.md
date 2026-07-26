@@ -17,28 +17,35 @@
 | 历史目录 | `octopus-src*`、`octopus-build-cache` | 只读现场或缓存 | 不作为开发、构建、发布或部署来源 |
 
 生产控制面继续保留在 `octopus/`，规范源码继续保留在 `octopus-mumu/`。不要合并目录，也不要
-把 17 GB 生产数据移动到源码仓库。
+把约 21 GB 生产数据移动到源码仓库。
 
 ## 当前生产真值
 
-以下值于 2026-07-20 通过 `scripts/check-governance.sh --live` 和 Docker inspect 核验：
+以下值于 2026-07-26 通过 `scripts/check-governance.sh --live`、Docker inspect、SQLite
+`quick_check` 和独立公网连接核验：
 
 | 项目 | 值 |
 | --- | --- |
-| 运行版本 | `v0.10.2-mumu.9` |
-| 应用源码 | `ee01f2af8c6856d275421bd9bd9aca2180f57d93` |
-| 当前运行状态记录提交 | `a63b32335384672bbac3e7dfd1678cf6127989ec` |
-| 生产镜像 | `mumu-140/octopus-concurrency:v0.10.2-mumu.9` |
-| 镜像 ID | `sha256:b21cb2b9806307d34997d3756c8ba896758eab512e7e3403f5ec8fff0de8836f` |
-| 容器 | `octopus` / `7acd6c3da5522b896860b75047c7b1dc80057d006d5f6c9f0002d28b8ee9001a` |
+| 运行版本 | `v0.10.2-mumu.11` |
+| 应用源码 | `97cd89444af403042407b4bb1a5e7bc19f7e96ab` |
+| 当前运行状态记录提交 | `2b5f312945d0bdfcd456ba28ee5d65527d7609bf` |
+| 生产镜像 | `mumu-140/octopus-concurrency:v0.10.2-mumu.11` |
+| 镜像 ID | `sha256:92d2a6b89df27f8781371fb493d7e1c3b48e1ea249b6a7ab2f1a979329109ce1` |
+| 容器 | `octopus` / `8d607f4046131c009134fb2d074113ec0ae0fd739f8109835c2e1fba8a15bc23` |
 | 网络与监听 | `host` / `0.0.0.0:35276` |
 | 数据挂载 | `/home/yangs/API/octopus/data:/app/data` |
 | Compose 副本 | `/home/yangs/API/octopus/docker-compose.yml` |
-| 回滚容器 | `octopus-mumu7-rollback-20260719-221914` |
-| 回滚快照 | `/home/yangs/API/octopus/backups/pre-v0.10.2-mumu.9-cutover-20260719-221914/` |
+| 回滚容器 | `octopus-mumu9-rollback-20260726T025221Z` |
+| 回滚快照 | `/home/yangs/API/octopus/backups/pre-v0.10.2-mumu.11-cutover-20260726T025221Z/` |
 
 不得仅凭本文中的版本号判断当前生产。每次操作前都重新读取
 `deploy/fwq57ys/production-state.json` 并运行只读守卫。
+
+`.11` 从 `.9` 行为基线重新实现模型、最终渠道和请求分组三维小时统计；`.10` 的
+`stats_dimension*` 实现和 tag 不复用。生产历史回填状态必须为 `completed`，三维成功数、失败数、
+输入/输出 Token 和费用必须逐项一致。2026-07-26 切换后对账为 14,920 成功、2,497 失败、
+1,746,810,391 输入 Token、9,006,975 输出 Token、费用 3481.480457；`.10` 旧表不存在。
+30 天和累计视图在历史覆盖不足时必须明确显示部分覆盖，不得把升级后的数据伪装为完整历史。
 
 ## 镜像与源码选择
 
@@ -130,7 +137,7 @@ scripts/check-governance.sh --live
 
 `--live` 只读取容器、Compose、挂载和 HTTP 基线，不操作生命周期或写 SQLite。
 
-当前回滚只能使用状态清单声明的 `.7` 回滚容器和 `.9` 切换快照。回滚也属于生产生命周期
+当前回滚只能使用状态清单声明的 `.9` 回滚容器和 `.11` 切换快照。回滚也属于生产生命周期
 操作，必须由带日志和失败处理的独立后台任务执行；不得复制旧文档中的前台 Docker 命令。
 
 vps76 的 `/opt/docker/octopus/data/` 只是 2026-07-10 迁移时的历史小型数据副本，已停止的
