@@ -40,6 +40,56 @@ check_required_files() {
     done
 }
 
+require_document_entries() {
+    local file="$1"
+    shift
+    local entry
+    for entry in "$@"; do
+        grep -Fqx "$entry" "$file" \
+            || fail "missing document contract in $file: $entry"
+    done
+}
+
+require_document_text() {
+    local file="$1"
+    shift
+    local required_text
+    for required_text in "$@"; do
+        grep -Fq "$required_text" "$file" \
+            || fail "missing required guidance in $file: $required_text"
+    done
+}
+
+check_manual_contracts() {
+    local development="$ROOT_DIR/docs/octopus-development-governance.md"
+    local production="$ROOT_DIR/docs/octopus-production.md"
+    local index
+    require_document_entries "$development" \
+        "## 修改路由" "## 按改动类型验证" "## 价格与费用契约" \
+        "## 明确禁止" "## 已知缺陷与历史坑" \
+        "## 停止条件" "## 交付证据"
+    require_document_entries "$production" \
+        "## 职责与边界" "## 镜像与源码选择" "## 候选验证" \
+        "## 数据备份" "## 生产切换" "## 验证与回滚" \
+        "## 已知事故与处理" "## 停止条件" "## 交付证据"
+    require_document_text "$development" \
+        "/home/yangs/API/octopus-mumu/" "stats_leaderboard" \
+        "item_reference" "web/pnpm-workspace.yaml" "UPDATE_PRICE_DATA=1" \
+        "actual_model_name" "request_model_name"
+    require_document_text "$production" \
+        "octopus-candidate-<version>" "read:packages" "pull_policy: never" \
+        "SELECT COUNT(*) FROM sqlite_schema;" "30 分钟" "自动回滚"
+    for index in AGENTS.md CLAUDE.md; do
+        require_document_text "$ROOT_DIR/$index" \
+            "docs/octopus-development-governance.md" \
+            "docs/octopus-production.md"
+    done
+    if git -C "$ROOT_DIR" grep -n -E \
+        "docs/(development-governance|production)\.md" -- . >/dev/null; then
+        fail "obsolete generic Octopus manual path detected"
+    fi
+}
+
 check_versions() {
     local version
     local go_version
@@ -130,6 +180,7 @@ check_repository() {
     jq -e '.schemaVersion == 1' "$STATE_FILE" >/dev/null \
         || fail "invalid production state schema"
     check_required_files
+    check_manual_contracts
     check_versions
     check_git_truth
     check_sensitive_files

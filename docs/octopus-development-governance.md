@@ -1,71 +1,104 @@
 # Octopus 开发治理
 
-本文件解释根 `AGENTS.md` 的执行细节。规则冲突时以 `AGENTS.md` 为准，运行事实冲突时
-以当前代码、Git 对象、`deploy/fwq57ys/production-state.json` 和 Docker inspect 证据为准。
+本文件把根目录 `AGENTS.md` 的规则落实为可执行的开发手册，回答“修改什么、在哪里改、怎么改、
+最低验证是什么、哪些做法禁止”。本手册只记录能由当前代码、Git、CI、生产状态或已复盘事故
+确认的事实，不把历史目录、旧 tag 或口头推测写成现状。
 
-## 目录治理
+## 规则优先级与真值
 
-### 唯一可编辑源码
+规则冲突时按以下顺序处理：
 
-`/home/yangs/API/octopus-mumu/` 是唯一开发仓库。所有代码、测试、构建文件、CI、
-release workflow 和受版本控制的部署声明都在这里修改。
+1. 根目录 `AGENTS.md`；
+2. 本手册；
+3. `docs/octopus-production.md` 中与生产、候选、数据和回滚有关的约束；
+4. README、USAGE 和历史记录。
 
-### 生产目录
+运行事实冲突时，以当前代码、Git 对象、`deploy/fwq57ys/production-state.json` 和 Docker
+inspect 证据为准。以下四项必须分别记录，不得相互推导：
 
-`/home/yangs/API/octopus/` 只保存：
-
-- `docker-compose.yml`：受 Git 管理 compose 的生产副本；
-- `data/`：生产配置和 SQLite；
-- `backups/`：控制面和数据快照；
-- 已停用的历史切换脚本。
-
-该目录不是源码仓库。不得在其中复制源码、执行 Git 初始化或临时构建。
-
-仓库根目录不再提供通用 `docker-compose.yml`。唯一受版本控制的生产 Compose 是
-`deploy/fwq57ys/compose.yaml`；本地开发按 README 从源码启动并使用独立数据。
-
-### 历史与缓存目录
-
-以下目录只保留现场，不得作为开发起点：
-
-- `/home/yangs/API/octopus-src/`
-- `/home/yangs/API/octopus-src.failed-clone-20260713/`
-- `/home/yangs/API/octopus-build-cache/`
-
-不因“看起来旧”而删除、移动或覆盖。清理必须作为独立任务，有清单、快照和逐项授权。
-
-## 状态模型
-
-每次汇报必须区分四个值：
-
-1. 运行镜像 tag；
+1. 当前 `main` commit；
 2. 运行应用源码 commit；
-3. 当前 `main` commit；
-4. 运行镜像 ID / 容器 ID。
+3. 运行镜像 tag / image ID；
+4. 运行容器 ID。
 
-运行版本、应用源码提交、当前 `main`、镜像和容器是相互独立的事实。具体值不得
-从本说明中的历史示例推断；生产状态以 `deploy/fwq57ys/production-state.json` 为机器真值，
-并由只读守卫与 Docker inspect 共同核验。`main` 更新不代表生产应用已更新。
+`main` 更新、Release 成功、镜像已存在和容器已切换是四个不同状态。
 
-## 分支生命周期
+## 目录与职责
+
+| 对象 | 规范位置 | 允许操作 | 禁止事项 |
+| --- | --- | --- | --- |
+| 唯一源码 | `/home/yangs/API/octopus-mumu/` | 开发、测试、构建、提交 | 不在第二份源码中继续工作 |
+| 生产控制面 | `/home/yangs/API/octopus/` | Compose 副本、真实数据、备份、部署证据 | 不初始化 Git、不放源码、不构建 |
+| 生产数据 | `/home/yangs/API/octopus/data/` | 仅获批的生产读写 | 不用于开发、单测或候选 |
+| 历史源码 | `/home/yangs/API/octopus-src*` | 只读追溯 | 不恢复旧改动、不构建、不部署 |
+| 构建缓存 | `/home/yangs/API/octopus-build-cache/` | 只作缓存 | 不视为源码或发布证据 |
+| 生产声明 | `deploy/fwq57ys/compose.yaml` | 版本控制的目标 Compose | 不直接挂候选数据 |
+| 发布目标与运行指纹 | `deploy/fwq57ys/production-state.json` | staging 记录目标 release/image，切换后记录 live 指纹 | 不把 staging 状态声称为已运行 |
+
+仓库根目录没有通用生产 `docker-compose.yml`。开发环境必须使用独立配置和数据，不得为了
+“方便”复用生产控制面。
+
+## 修改路由
+
+先按变更类型找到主文件，再检查同一行中的联动区域。Handler 不应绕过 `internal/op/`
+直接实现业务规则；模型、迁移、备份和恢复必须作为一个数据契约审查。
+
+| 变更类型 | 主要修改位置 | 必须同步检查 |
+| --- | --- | --- |
+| 配置、默认值、版本信息 | `internal/conf/` | `cmd/`、`web/src/lib/info.ts`、配置文档；发布时再检查版本矩阵 |
+| 数据模型、索引、迁移 | `internal/model/`、`internal/db/migrate/` | `internal/db/`、`internal/op/backup.go`、迁移/备份测试 |
+| 业务规则、缓存、查询 | `internal/op/` | 调用它的 Handler、缓存失效、并发和事务边界 |
+| 管理 API、路由、响应 | `internal/server/handlers/`、`internal/server/router/` | `internal/server/resp/`、鉴权、中间件、`web/src/api/` |
+| Relay、负载均衡、协议 | `internal/relay/`、`internal/protocolroute/`、`internal/transformer/` | Chat、Responses、Anthropic、流式/非流式、重试和计量路径 |
+| 站点/渠道同步 | `internal/sitesync/` | 渠道模型、管理 API、同步报告和对应前端 |
+| 价格与费用 | `internal/price/`、`scripts/updatePrice.py` | 文本、Responses、图片、输入估算和历史数据边界 |
+| 三维统计与排行榜 | `internal/model/stats_leaderboard.go`、`internal/op/stats_leaderboard*.go` | `internal/relay/*metrics.go`、备份恢复、统计 Handler、Web 排行榜和覆盖提示 |
+| Web API | `web/src/api/` | 后端响应契约、React Query 缓存键和错误/空状态 |
+| Web 页面、状态、路由 | `web/src/components/modules/`、`web/src/stores/`、`web/src/route/`、`web/src/app/` | 三套 locale、桌面/窄屏、键盘、加载/空/错误状态 |
+| 前端依赖 | `web/package.json`、`web/pnpm-lock.yaml` | `web/pnpm-workspace.yaml`、`Dockerfile.build`、CI pnpm 版本 |
+| 生产构建 | `Dockerfile.build`、`scripts/build-production-image.sh` | OCI labels、固定摘要、源码 tree、前后端完整构建 |
+| CI 与 Release | `.github/workflows/` | tag 触发、权限、GHCR、归档、治理 job |
+| 生产声明 | `deploy/fwq57ys/compose.yaml`、`production-state.json` | 只在发布/部署各自阶段修改；不得把文本变更写成已部署 |
+| 治理文档与守卫 | `AGENTS.md`、两份 Octopus 手册、`scripts/check-governance.sh` | README、USAGE、`CLAUDE.md` 的入口链接 |
+
+### 发布与部署字段矩阵
+
+当前流程分为三个提交/状态阶段，不得合并描述：
+
+1. **应用源码与 Release**：功能源码 commit 经测试后创建新 tag；`Dockerfile.build` 通过
+   `GIT_VERSION` 注入发布版本，因此 tag 所指源码中的默认版本字段可以仍是当前生产版本。
+2. **部署 staging**：Release/GHCR 成功后，单独提交同步
+   `internal/conf/version.go`、`web/package.json`、`web/src/lib/info.ts`、受管 Compose，
+   并把 `production-state.json` 的目标 release/image 更新为新版本。此时 live 容器 ID、
+   StartedAt 等字段仍是旧生产；`--repo` 应通过，`--live` 应因尚未切换而不通过。
+3. **切换后运行证据**：后台切换成功后按 Docker inspect 更新 container ID、StartedAt、
+   restart count、回滚快照等 live 字段，再提交运行状态；此时 `--repo` 和 `--live` 都应通过。
+
+Release tag 指向应用源码 commit，不指向后续部署 staging commit。任何汇报必须标明当前处于
+“源码/Release”“staging 待切换”还是“live 已核验”，不得把 staging 文件内容说成已部署。
+
+## 通用开发流程
 
 ### 开始
 
 ```bash
+cd /home/yangs/API/octopus-mumu
 scripts/check-governance.sh --repo
 git status --short --branch
 git fetch origin
 git switch -c codex/<topic> origin/main
 ```
 
-若工作树不干净或当前目录不明确，停止，不创建新目录规避问题。
+工作树不干净、目录不是规范源码、`origin/main` 无法确认时停止。不得新建第二个克隆规避问题。
 
-### 开发与验证
+### 实现
 
-- 每个分支只有一个目标；不顺带合并别的功能。
-- 每次提交保持可审查，构建产物、缓存、数据库和凭据不得入 Git。
-- 配置/文档改动至少运行语法和静态检查；代码改动运行对应测试。
-- 构建/发布改动必须完成一次无生产数据挂载的完整旁路镜像构建。
+1. 一个分支只处理一个目标；先写或补能暴露问题的测试。
+2. 只改“修改路由”列出的必要文件，不顺带搬运历史分支或 `.10` 实现。
+3. 数据结构变化同时处理迁移、备份/恢复和旧数据兼容。
+4. 协议变化覆盖流式、非流式、失败、重试和计量，不只测成功响应。
+5. Web 变化复用现有组件与状态模式，同时处理加载、空、错误、窄屏和键盘操作。
+6. 每个提交保持可审查；数据库、凭据、构建产物、缓存和候选数据不得入 Git。
 
 ### 推送与晋级
 
@@ -77,73 +110,104 @@ git merge --ff-only codex/<topic>
 OCTOPUS_MAIN_PROMOTION=1 git push origin main
 ```
 
-`OCTOPUS_MAIN_PROMOTION=1` 只允许 hook 放行显式晋级；使用者仍必须提供 CI URL 和审查证据。
-禁止 `--no-verify`、force、rebase 已推送主线或重置公开历史。
+只允许普通快进。禁止 `--no-verify`、force push、移动公开 tag、rebase 已发布主线或把失败
+CI 的 SHA 晋级。发布和部署另行授权，合并 `main` 不自动触发生产切换。
 
-### 收尾
+## 按改动类型验证
 
-- 核对 `origin/main` 等于本地 `main`。
-- 主题分支不再承载新工作；需要新目标时从最新 `origin/main` 重新建分支。
-- 回到干净 `main`。
-- 更新交接记录，注明“未部署”或具体部署证据。
+下表是最低门禁，不替代针对缺陷新增的测试。fwq57ys 宿主当前没有 `go` 命令；
+`go: command not found` 不是通过证据，后端全量测试必须由 GitHub CI 或等价的固定 Go 1.25
+环境完成。
 
-## 分支与历史版本
+| 改动 | 最低本地/固定环境验证 | 额外证据 |
+| --- | --- | --- |
+| 仅文档/治理脚本 | `bash -n scripts/check-governance.sh`；`scripts/check-governance.sh --repo` | 新旧路径搜索、主题分支 governance CI |
+| 普通 Go 逻辑 | 相关 package 测试；`go test -buildvcs=false ./...` | 失败用例先失败、修复后通过；backend CI |
+| 模型/迁移/备份 | `go test -buildvcs=false ./internal/db/... ./internal/op/...`；全量 Go 测试 | 旧库副本迁移、导入导出、`quick_check` |
+| Relay/协议 | 相关 `internal/relay/`、`protocolroute/`、`transformer/` 测试；全量 Go 测试 | 受影响协议的流式/非流式和失败重试样例 |
+| 三维统计 | `go test -buildvcs=false ./internal/op ./internal/relay ./internal/server/handlers`；全量 Go 测试 | 独立数据副本回填；模型/最终渠道/请求分组逐项对账 |
+| Web/API | `pnpm install --frozen-lockfile`、`pnpm lint`、`pnpm build`（均在 `web/`） | 桌面和 320px/390px 窄屏、键盘、空/错误状态截图或记录 |
+| 构建/依赖/Release | shell 语法、治理守卫、前后端全量、使用计划中的新版本做完整旁路镜像构建 | OCI version/revision/source tree/build time；无生产挂载 |
+| Compose/状态清单 | `docker compose -f deploy/fwq57ys/compose.yaml config`、`--repo` | 获批部署后再运行 `--live` 并提交真实 inspect 指纹 |
 
-`main` 是唯一集成主线，但不是运行版本的替代描述。历史分支、backup 分支和旧 release tag
-只用于追溯，不能作为新任务起点或部署来源。需要确认隔离分支时读取
-`production-state.json` 的 `quarantinedBranches`，不要依赖文档中复制的旧列表。
+UI 或协议改动不能只以“编译通过”验收；统计或迁移不能只以“新表存在”验收。
 
-## 发布与部署分离
+## 价格与费用契约
 
-### 发布
+价格单位为美元/百万 Token，当前统一规则为：
 
-1. 从最新 `main` 完成版本字段更新和测试。
-2. 创建新的 annotated tag；不得移动旧 tag。
-3. 使用 `scripts/build-production-image.sh <new-version>` 或受控 release workflow 构建。
-4. 核对二进制版本、Go 版本、commit、build time、OCI revision/source tree。
-5. 推送新镜像，不覆盖旧版本。
+1. `actual_model_name` 有非零精确价格时，使用实际模型价格；
+2. 实际模型缺价或只有全零占位时，回退到 `request_model_name` 的请求分组官方价格；
+3. 请求分组明确为零价时保持零，不臆造价格；
+4. 文本、Responses、输入估算兜底和图片路径必须使用同一规则；
+5. 当前只有 `codex-auto-review`（无公开定价）和
+   `sensenova-6.7-flash-lite`（免费方案）明确保留零价。
 
-生产服务只允许使用 `deploy/fwq57ys/compose.yaml` 和 `production-state.json` 同时声明的精确
-镜像。上游镜像、`latest`、旧 mumu tag、失败发布 tag 和本地测试镜像均不得替代生产镜像。
+历史日志不会随价格表自动重算。价格数据刷新和历史费用回填是两个独立任务：前者只有显式
+`UPDATE_PRICE_DATA=1` 才执行并必须先审查生成差异；后者需要生产快照、数据范围和审计，
+不得通过直接写 SQLite 顺带完成。
 
-### 部署
+## 明确禁止
 
-发布成功不自动授权部署。部署必须另有维护窗口，且执行：
+- 禁止在 `main`、生产控制面、历史源码或 build-cache 中开发。
+- 禁止从旧 tag、backup 分支、失败发布或隔离分支复制整套实现覆盖当前主线。
+- 禁止直接修改生产 SQLite 来验证代码；候选只能挂独立一致性副本。
+- 禁止 Handler 直接复制一套与 `internal/op/` 不一致的业务规则。
+- 禁止协议转换器发明上游未要求的字段，或只凭单一供应商成功响应判定兼容。
+- 禁止只更新一个版本字段、移动既有 tag 或用同名镜像覆盖旧构建。
+- 禁止把 `latest`、上游基础镜像、Docker Hub 同名镜像或本地测试镜像当生产镜像。
+- 禁止设置 `UPDATE_PRICE_DATA=1` 顺带刷新价格；价格更新必须独立审查差异。
+- 禁止因宿主缺少 Go/pnpm 而跳过测试并把静态阅读写成验证通过。
+- 禁止未获维护窗口授权时执行生产容器生命周期命令或生产数据写入。
+- 禁止在当前代理 API 所依赖的前台 SSH 会话中 stop/restart/recreate Octopus。
 
-1. `scripts/check-governance.sh --live`；
-2. 创建并验证控制面/必要数据快照；
-3. 预加载目标镜像；
-4. 记录旧容器和数据指纹；
-5. 把获批切换及失败回滚写成带日志、可独立完成的后台任务，脱离当前 API 会话执行；
-6. 验证 HTTP、模型接口、挂载、数据库和回滚；
-7. 更新生产状态清单并提交。
+## 已知缺陷与历史坑
 
-## 平台限制
+| 现象 | 已确认原因 | 正确做法 | 禁止的错误处理 |
+| --- | --- | --- | --- |
+| `.10` 候选累计总表有 30,215 请求/3,990,045,329 Token，渠道/分组新表各只有 3 请求/657 Token | `stats_dimension*` 没有完整历史迁移/回填，且遗漏独立计量写入路径 | 以 `.9` 行为基线重做 `stats_leaderboard*`；覆盖状态必须 `completed`，三维成功、失败、输入/输出 Token、费用逐项一致 | 复用 `.10` tag、表、写入路径，或只检查页面能显示 |
+| Responses 上游报 `unknown_parameter`，工具调用链中断 | 曾自动合成或重写 `function_call_output.item_reference` | 保留类型化 item ID 规范化，但 `item_reference` 仅按协议和真实输入透传，并用供应商兼容样例回归 | 为“补全”字段而发明引用值 |
+| 前端 Docker 安装阶段找不到/拒绝构建原生依赖 | pnpm 版本或原生依赖许可文件未同步进入构建上下文 | 以 `web/package.json` 的 `packageManager` 为准；安装前复制 lockfile 和 `web/pnpm-workspace.yaml` | 在 Dockerfile 单独升级 pnpm，或删除 allowBuilds |
+| 构建时价格表意外变化 | 设置了 `UPDATE_PRICE_DATA=1` 会刷新仓库价格数据 | 默认使用已提交价格；价格任务先审查和提交差异，再构建 | 发布功能时顺带刷新价格 |
+| 代码、Web、Compose 或状态清单看似混合新旧值 | 应用源码、部署 staging 和 live 指纹是三个阶段 | 按发布与部署字段矩阵分阶段同步；staging 只声称“待切换”，切换后再写真实 inspect | 把 staging 状态说成已运行，或强行让 tag 指向部署提交 |
+| 新改动被误判为 `go vet` 回归 | `.9` 基线在 `internal/relay/protocol_attempt.go:187` 已有 copy-lock 告警 | 单独记录基线和新增告警；当前任务仍须通过规定的 Go tests/CI | 把既有告警说成本轮修复，或用它解释所有失败 |
 
-该 GitHub 仓库是私有仓库，当前套餐的 branch protection API 返回 403。替代措施为：
+## 停止条件
 
-- `main`/tag 治理写入根 `AGENTS.md`；
-- `.githooks/pre-push` 阻止非快进、tag 改写和未显式批准的 main 推送；
-- CI governance job 校验规则、状态清单、tag、版本和敏感文件边界；
-- CODEOWNERS 与 PR 模板要求审查证据；
-- 服务器源码仓库安装版本化 hook。
+出现任一情况立即停止写入或晋级，先恢复事实：
 
-这些措施不能阻止从未安装 hook 的其他克隆直接推送，所以任何新克隆必须先运行
-`scripts/install-git-hooks.sh`。套餐支持后，应把相同规则迁移为 GitHub ruleset，不能删除仓库内守卫。
+- 当前目录不是唯一源码，或工作树有来源不明的修改；
+- 目标不是从最新 `origin/main` 建立，或需要合并未审查的隔离进度；
+- 测试无法运行且没有 GitHub CI/固定环境的等价证据；
+- 版本、tag、source commit、OCI revision 或 source tree 不一致；
+- 数据结构变化没有迁移、备份/恢复和旧数据验证；
+- 统计三维不一致、coverage 未完成或部分覆盖未明确展示；
+- 候选触碰生产数据、生产端口或生产容器名；
+- 任务会触发生产生命周期/SQLite 写入但没有明确维护窗口；
+- 没有可验证快照、后台切换脚本或自动回滚。
 
-## 交接模板
+停止不是改用旧目录、旧镜像或本地重建绕过门禁。
+
+## 交付证据
+
+每次交接至少写清：
 
 ```text
-任务：
+任务与范围：
 源码目录：/home/yangs/API/octopus-mumu
 分支 / HEAD / origin SHA：
-运行版本 / 应用源码 / 镜像 ID / 容器 ID：
-修改文件：
-验证命令与 CI URL：
-是否部署：否 / 是（维护窗口证据）
-生产变更：
-明确未修改：容器生命周期 / SQLite / 其他分支
-快照与回退：
-遗留风险：
+当前 main / 运行应用源码：
+运行镜像 tag / image ID / 容器 ID：
+修改文件与修改理由：
+新增或修改的测试：
+实际执行命令与结果：
+GitHub CI / Release URL：
+是否部署：否 / 是（维护窗口与后台任务证据）
+数据与容器操作：
+快照 / 回滚：
+明确未修改：
 临时资源清理：
+已知限制与停止项：
 ```
+
+没有部署时必须明确写“未部署”，不能用“已合并”“Release 成功”代替。
