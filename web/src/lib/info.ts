@@ -1,2 +1,2 @@
-export const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || 'v0.10.2-mumu.9';
+export const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || 'v0.10.2-mumu.11';
 export const GITHUB_REPO = process.env.NEXT_PUBLIC_GITHUB_REPO || 'https://github.com/mumu-140/octopus-concurrency';
