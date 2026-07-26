@@ -14,7 +14,7 @@
 
 > **mumu deployment boundary:** this repository is the only source for the fwq57ys production fork.
 > Do not deploy `hureru/octopus`, `bestruirui/octopus`, `latest`, or an old mumu image by following
-> upstream examples. Operators must read [the production manual](docs/production.md) and use only the
+> upstream examples. Operators must read [the production manual](docs/octopus-production.md) and use only the
 > exact image declared by `deploy/fwq57ys/compose.yaml` and `deploy/fwq57ys/production-state.json`.
 
 
@@ -38,7 +38,7 @@
 
 ### Production on fwq57ys
 
-Production is not started from README commands. Read [docs/production.md](docs/production.md), verify the
+Production is not started from README commands. Read [docs/octopus-production.md](docs/octopus-production.md), verify the
 machine state, and use the managed Compose only during an approved maintenance window. Container lifecycle
 changes must run as a detached background task because Octopus carries the active agent API connection.
 

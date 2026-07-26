@@ -104,7 +104,7 @@ Octopus 是一个 **LLM API 聚合与负载均衡服务**。简单说，它帮�
 ### 4.1 部署边界
 
 本指南说明应用使用方式，不是 fwq57ys 生产部署手册。生产操作必须遵循
-[docs/production.md](docs/production.md)，只使用受管 Compose 和机器状态清单共同声明的精确
+[docs/octopus-production.md](docs/octopus-production.md)，只使用受管 Compose 和机器状态清单共同声明的精确
 镜像。不得替换为 `hureru/octopus`、`bestruirui/octopus`、`latest`、旧 mumu tag 或仓库历史
 根 Compose。
 

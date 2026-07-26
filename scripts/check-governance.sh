@@ -29,8 +29,8 @@ check_required_files() {
         .github/pull_request_template.md \
         .github/workflows/ci.yml \
         AGENTS.md \
-        docs/development-governance.md \
-        docs/production.md \
+        docs/octopus-development-governance.md \
+        docs/octopus-production.md \
         deploy/fwq57ys/compose.yaml \
         deploy/fwq57ys/production-state.json \
         Dockerfile.build \

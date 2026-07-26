@@ -1,8 +1,8 @@
 # Octopus Repository Rules
 
 本文件是该仓库对 Codex、Claude、Hermes 和其他自动化代理的最高优先级项目规则。
-开始任何工作前必须先读本文件，再按需读取 `docs/development-governance.md` 和
-`docs/production.md`。
+开始任何工作前必须先读本文件，再按需读取 `docs/octopus-development-governance.md` 和
+`docs/octopus-production.md`。
 
 ## 1. 唯一真值
 

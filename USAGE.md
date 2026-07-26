@@ -104,7 +104,7 @@ If your provider isn't a relay site but gave you a Base URL + Key directly (e.g.
 ### 4.1 Deployment boundary
 
 This guide explains application usage, not fwq57ys production deployment. For production, follow
-[docs/production.md](docs/production.md) and use only the exact image declared by the managed Compose and
+[docs/octopus-production.md](docs/octopus-production.md) and use only the exact image declared by the managed Compose and
 machine state file. Never substitute `hureru/octopus`, `bestruirui/octopus`, `latest`, an old mumu tag, or
 the repository's historical root Compose.
 

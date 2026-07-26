@@ -1,7 +1,7 @@
 # Octopus 生产部署手册
 
 本文件是 fwq57ys 上 Octopus 的唯一现行部署手册。仓库规则见 `AGENTS.md`，开发流程见
-`docs/development-governance.md`，机器可读运行真值见
+`docs/octopus-development-governance.md`，机器可读运行真值见
 `deploy/fwq57ys/production-state.json`。历史版本、旧方案和 Git 记录只能用于追溯，不能据此
 选择源码、镜像或执行部署。
 

@@ -14,7 +14,7 @@
 
 > **mumu 部署边界：**本仓库是 fwq57ys 二开版本的唯一源码。不得照搬上游示例部署
 > `hureru/octopus`、`bestruirui/octopus`、`latest` 或旧 mumu 镜像。运维前必须阅读
-> [生产部署手册](docs/production.md)，并且只使用 `deploy/fwq57ys/compose.yaml` 与
+> [生产部署手册](docs/octopus-production.md)，并且只使用 `deploy/fwq57ys/compose.yaml` 与
 > `deploy/fwq57ys/production-state.json` 同时声明的精确镜像。
 
 
@@ -38,7 +38,7 @@
 
 ### fwq57ys 生产环境
 
-生产环境不使用 README 中的通用启动命令。先阅读 [生产部署手册](docs/production.md)，核验机器
+生产环境不使用 README 中的通用启动命令。先阅读 [生产部署手册](docs/octopus-production.md)，核验机器
 状态，并且只在获批维护窗口内使用受管 Compose。Octopus 承载当前代理 API，任何容器生命周期
 操作必须由脱离当前会话的独立后台任务完成。
 

@@ -3,7 +3,7 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 > **强制入口**：开始工作前必须先读取根目录 `AGENTS.md`。目录、分支、tag、构建、
-> 生产数据和交接规则以 `AGENTS.md` 与 `docs/development-governance.md` 为准。
+> 生产数据和交接规则以 `AGENTS.md` 与 `docs/octopus-development-governance.md` 为准。
 > 本文件只说明代码结构，不授予生产部署或数据库写入权限。
 
 ## 开发命令
