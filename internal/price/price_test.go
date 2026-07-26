@@ -33,12 +33,12 @@ func TestResolveLLMPriceFallsBackFromZeroActualToRequestModel(t *testing.T) {
 	}
 }
 
-func TestResolveLLMPriceKeepsNonZeroActualPrice(t *testing.T) {
+func TestResolveLLMPriceAlwaysReturnsGroupPrice(t *testing.T) {
 	setTestPreset(t, "test-priced-actual", model.LLMPrice{Input: 1, Output: 4})
 	setTestPreset(t, "test-priced-request", model.LLMPrice{Input: 2, Output: 8})
 
 	got := ResolveLLMPrice("test-priced-actual", "test-priced-request")
-	if got == nil || got.Input != 1 || got.Output != 4 {
-		t.Fatalf("unexpected resolved price: %#v", got)
+	if got == nil || got.Input != 2 || got.Output != 8 {
+		t.Fatalf("expected group model price, got %#v", got)
 	}
 }
