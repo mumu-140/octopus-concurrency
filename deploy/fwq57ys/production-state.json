@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-07-26T10:03:51Z",
+  "updatedAt": "2026-08-08T04:57:09Z",
   "repository": {
     "github": "mumu-140/octopus-concurrency",
     "canonicalPath": "/home/yangs/API/octopus-mumu",
@@ -16,8 +16,8 @@
     "container": {
       "name": "octopus",
       "id": "e4df620743dbcc9a5b4789bf68a9e0a2ce64dd170997f1cc877d235223a16287",
-      "image": "mumu-140/octopus-concurrency:v0.10.2-mumu.12",
-      "imageId": "sha256:cb6229409bb9ba904a15408ddf4f41b15efb231a8f1f3e12ee226b1126f5f1b5",
+      "image": "mumu-140/octopus-concurrency:v0.10.2-mumu.13",
+      "imageId": "sha256:1471b1f75228c25755190b797098fac9f5dbfd8aeb0973f57916adc9acc9db94",
       "startedAt": "2026-07-26T09:53:13.42528364Z",
       "networkMode": "host",
       "restartCount": 0,
@@ -28,9 +28,9 @@
       }
     },
     "release": {
-      "version": "v0.10.2-mumu.12",
-      "tag": "v0.10.2-mumu.12",
-      "sourceCommit": "c39afe2b2b669ea66beed07722c18d30f405fb07"
+      "version": "v0.10.2-mumu.13",
+      "tag": "v0.10.2-mumu.13",
+      "sourceCommit": "639a9bab93023ce87101d405446783daa522d53a"
     },
     "httpChecks": [
       "http://127.0.0.1:35276/",
