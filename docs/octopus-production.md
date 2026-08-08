@@ -66,22 +66,22 @@ scripts/check-governance.sh --live
 
 ## 当前生产真值
 
-以下值于 2026-07-26 通过治理守卫、Docker inspect、SQLite `quick_check` 和独立公网连接核验。
+以下值于 2026-08-08 通过治理守卫、Docker inspect、SQLite `quick_check` 和独立公网连接核验。
 它们用于识别当前基线，不替代每次操作前的实时核验。
 
 | 项目 | 值 |
 | --- | --- |
-| 运行版本 | `v0.10.2-mumu.12` |
-| 应用源码 | `c39afe2b2b669ea66beed07722c18d30f405fb07` |
-| 当前运行状态记录提交 | `a01a48c38aa9976b3ab2f3a6fbd57b8fb7670e74` |
-| 生产镜像 | `mumu-140/octopus-concurrency:v0.10.2-mumu.12` |
-| 镜像 ID | `sha256:cb6229409bb9ba904a15408ddf4f41b15efb231a8f1f3e12ee226b1126f5f1b5` |
-| 容器 | `octopus` / `e4df620743dbcc9a5b4789bf68a9e0a2ce64dd170997f1cc877d235223a16287` |
+| 运行版本 | `v0.10.2-mumu.13` |
+| 应用源码 | `639a9bab93023ce87101d405446783daa522d53a` |
+| 当前运行状态记录提交 | `400b16fdb22a27db060b7d56220ff2bf65563f2d` |
+| 生产镜像 | `mumu-140/octopus-concurrency:v0.10.2-mumu.13` |
+| 镜像 ID | `sha256:1471b1f75228c25755190b797098fac9f5dbfd8aeb0973f57916adc9acc9db94` |
+| 容器 | `octopus` / `d467591a7adb8562a29887bef5920b98cf6f4d715541f497025be5677f88126f` |
 | 网络与监听 | `host` / `0.0.0.0:35276` |
 | 数据挂载 | `/home/yangs/API/octopus/data:/app/data` |
 | Compose 副本 | `/home/yangs/API/octopus/docker-compose.yml` |
-| 回滚容器 | 无常驻（上次 cutover 后已清理；下次部署前须按流程先行重建） |
-| 回滚快照 | `/home/yangs/API/octopus/backups/pre-v0.10.2-mumu.12-cutover-20260726T094454Z/` |
+| 回滚容器 | `octopus-mumu12-rollback-20260808T052441Z`（已创建未启动，.12 镜像待命） |
+| 回滚快照 | `/home/yangs/API/octopus/backups/pre-v0.10.2-mumu.13-cutover-20260808T052441Z/` |
 
 `.11` 从 `.9` 行为基线重新实现模型、最终渠道和请求分组三维小时统计；`.10` 的
 `stats_dimension*` 实现和 tag 已废弃。生产三维必须逐项对账成功、失败、输入/输出 Token
