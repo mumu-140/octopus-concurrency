@@ -208,13 +208,23 @@ func TestImagesHandlerClientCancellationDoesNotPolluteHealth(t *testing.T) {
 	ginTestMode(t)
 	ctx := setupRelayTestDB(t)
 	started := make(chan struct{}, 1)
+	release := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		select {
 		case started <- struct{}{}:
 		default:
 		}
+		// 挂住上游,保证客户端取消发生在请求飞行途中。若此处直接返回,
+		// 上游会先以 200 完成,relay 记录一次成功样本,断言随调度时序失窗。
+		select {
+		case <-r.Context().Done():
+		case <-release:
+		}
 	}))
-	defer server.Close()
+	defer func() {
+		close(release)
+		server.Close()
+	}()
 
 	channel := newImagesTestChannel("image-cancel", server.URL)
 	channel.MaxConcurrency = 1
