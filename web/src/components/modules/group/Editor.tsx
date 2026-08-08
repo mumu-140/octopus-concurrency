@@ -12,12 +12,13 @@ import { Switch } from '@/components/ui/switch';
 import { Accordion, AccordionContent, AccordionItem } from '@/components/ui/accordion';
 import { cn } from '@/lib/utils';
 import { getModelIcon } from '@/lib/model-icons';
-import type { GroupMode, GroupProtocolMode, ProtocolName } from '@/api/endpoints/group';
-import { normalizeGroupProtocolMode, normalizePreferredProtocols } from '@/api/endpoints/group';
+import type { GroupCompressConfig, GroupMode, GroupProtocolMode, ProtocolName } from '@/api/endpoints/group';
+import { normalizeGroupCompressConfig, normalizeGroupProtocolMode, normalizePreferredProtocols } from '@/api/endpoints/group';
 import type { SelectedMember } from './ItemList';
 import { MemberList } from './ItemList';
 import { matchesGroupName, memberKey, normalizeKey, MODE_LABELS } from './utils';
 import { ProtocolPolicySection } from './ProtocolPolicySection';
+import { CompressSection } from './CompressSection';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/animate-ui/components/animate/tooltip';
 import { HelpCircle } from 'lucide-react';
 
@@ -33,6 +34,7 @@ export type GroupEditorValues = {
     max_retries: number;
     protocol_mode: GroupProtocolMode;
     preferred_protocols: ProtocolName[];
+    compress_config?: GroupCompressConfig;
     members: SelectedMember[];
 };
 
@@ -262,6 +264,7 @@ export function GroupEditor({
     onSubmit,
     onCancel,
     nameLabel,
+    showCompress = true,
 }: {
     initial?: Partial<GroupEditorValues>;
     submitText: string;
@@ -270,6 +273,7 @@ export function GroupEditor({
     onSubmit: (values: GroupEditorValues) => void;
     onCancel?: () => void;
     nameLabel?: string;
+    showCompress?: boolean;
 }) {
     const t = useTranslations('group');
     const { data: modelChannels = [] } = useModelChannelList();
@@ -283,6 +287,7 @@ export function GroupEditor({
     const [maxRetries, setMaxRetries] = useState<number>(initial?.max_retries ?? 3);
     const [protocolMode, setProtocolMode] = useState<GroupProtocolMode>(normalizeGroupProtocolMode(initial?.protocol_mode));
     const [preferredProtocols, setPreferredProtocols] = useState<ProtocolName[]>(normalizePreferredProtocols(initial?.preferred_protocols));
+    const [compressConfig, setCompressConfig] = useState<GroupCompressConfig | undefined>(normalizeGroupCompressConfig(initial?.compress_config));
     const [selectedMembers, setSelectedMembers] = useState<SelectedMember[]>(initial?.members ?? []);
     const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
 
@@ -370,6 +375,7 @@ export function GroupEditor({
             max_retries: maxRetries,
             protocol_mode: protocolMode,
             preferred_protocols: preferredProtocols,
+            compress_config: showCompress ? compressConfig : undefined,
             members: selectedMembers,
         });
     };
@@ -544,6 +550,13 @@ export function GroupEditor({
                         onModeChange={setProtocolMode}
                         onPreferredChange={setPreferredProtocols}
                     />
+
+                    {showCompress ? (
+                        <CompressSection
+                            value={compressConfig}
+                            onChange={setCompressConfig}
+                        />
+                    ) : null}
 
                     <div className="flex-1 min-h-0 overflow-hidden">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 h-full min-h-[18rem]">

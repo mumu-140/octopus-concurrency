@@ -136,6 +136,7 @@ export function PresetEditorContent({ preset }: PresetEditorContentProps) {
                     onCancel={() => setIsOpen(false)}
                     onSubmit={handleSubmit}
                     nameLabel={t('preset.name')}
+                    showCompress={false}
                 />
             </MorphingDialogDescription>
         </>

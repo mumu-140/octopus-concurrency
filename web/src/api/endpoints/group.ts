@@ -65,6 +65,60 @@ export function normalizePreferredProtocols(value: unknown): ProtocolName[] {
     return out;
 }
 
+/**
+ * 分组级请求压缩配置。与后端 model.GroupCompressConfig 字段对应。
+ * enabled 为分组压缩总开关(还需全局 compress_master_enabled 开启才生效)。
+ * lite: 空白折叠 + system 去重 + tool 结果截断; headroom: 同构 JSON 数组转列式表;
+ * output_style: 输出风格注入("" | "terse-prose" | "terse-cjk")。
+ */
+export type CompressOutputStyle = '' | 'terse-prose' | 'terse-cjk';
+
+export interface GroupCompressConfig {
+    enabled: boolean;
+    lite: boolean;
+    headroom: boolean;
+    output_style: CompressOutputStyle;
+}
+
+export type CompressTier = 'low' | 'medium' | 'high' | 'custom';
+
+const OUTPUT_STYLES: CompressOutputStyle[] = ['', 'terse-prose', 'terse-cjk'];
+
+function normalizeOutputStyle(value: unknown): CompressOutputStyle {
+    return (OUTPUT_STYLES as string[]).includes(value as string) ? (value as CompressOutputStyle) : '';
+}
+
+export function normalizeGroupCompressConfig(value: unknown): GroupCompressConfig | undefined {
+    if (!value || typeof value !== 'object') return undefined;
+    const v = value as Record<string, unknown>;
+    return {
+        enabled: v.enabled === true,
+        lite: v.lite !== false,        // 默认开启最低档
+        headroom: v.headroom === true,
+        output_style: normalizeOutputStyle(v.output_style),
+    };
+}
+
+// 预设档位 → 引擎组合。low 为最低档(默认)。
+export function compressConfigForTier(tier: Exclude<CompressTier, 'custom'>): GroupCompressConfig {
+    switch (tier) {
+        case 'low':
+            return { enabled: true, lite: true, headroom: false, output_style: '' };
+        case 'medium':
+            return { enabled: true, lite: true, headroom: true, output_style: '' };
+        case 'high':
+            return { enabled: true, lite: true, headroom: true, output_style: 'terse-prose' };
+    }
+}
+
+// 由引擎组合反推档位;无法匹配预设档时返回 'custom'。
+export function compressTierOf(cfg: GroupCompressConfig): CompressTier {
+    if (cfg.lite && !cfg.headroom && cfg.output_style === '') return 'low';
+    if (cfg.lite && cfg.headroom && cfg.output_style === '') return 'medium';
+    if (cfg.lite && cfg.headroom && cfg.output_style === 'terse-prose') return 'high';
+    return 'custom';
+}
+
 
 /**
  * 分组信息
@@ -80,6 +134,7 @@ export interface Group {
     max_retries?: number;
     protocol_mode?: GroupProtocolMode;
     preferred_protocols?: ProtocolName[];
+    compress_config?: GroupCompressConfig;
     pinned?: boolean;
     pinned_at?: string | null;
     active_preset_id?: number | null;
@@ -166,6 +221,7 @@ export interface GroupUpdateRequest {
     max_retries?: number;                 // 仅在最大重试次数变更时发送
     protocol_mode?: GroupProtocolMode;
     preferred_protocols?: ProtocolName[];
+    compress_config?: GroupCompressConfig;    // 仅在压缩配置变更时发送(整体替换;关闭发 enabled:false)
     items_to_add?: GroupItemAddRequest[];    // 新增的 items
     items_to_update?: GroupItemUpdateRequest[]; // 更新的 items (priority 变更)
     items_to_delete?: number[];              // 删除的 item IDs
@@ -290,6 +346,7 @@ function applyGroupUpdate(group: Group, req: GroupUpdateRequest): Group {
     if (req.max_retries !== undefined) next.max_retries = req.max_retries;
     if (req.protocol_mode !== undefined) next.protocol_mode = req.protocol_mode;
     if (req.preferred_protocols !== undefined) next.preferred_protocols = req.preferred_protocols;
+    if (req.compress_config !== undefined) next.compress_config = req.compress_config;
 
     let items = [...(group.items ?? [])];
     if (req.items_to_delete?.length) {

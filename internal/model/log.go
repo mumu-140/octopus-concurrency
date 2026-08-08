@@ -69,6 +69,7 @@ type RelayLog struct {
 	BillInputTokens      *int                `json:"bill_input_tokens,omitempty"`              // 按常规输入价格计费的 Token
 	CacheReadTokens      *int                `json:"cache_read_tokens,omitempty"`              // 从缓存读取的 Token
 	CacheWriteTokens     *int                `json:"cache_write_tokens,omitempty"`             // 写入缓存的 Token
+	CompressSavedPct     *int                `json:"compress_saved_pct,omitempty"`             // 请求压缩节省百分比 0-100，未压缩为 nil
 	OutputTokens         int                 `json:"output_tokens"`                            // 输出 Token
 	Ftut                 int                 `json:"ftut"`                                     // 首字时间(毫秒)
 	UseTime              int                 `json:"use_time"`                                 // 总用时(毫秒)

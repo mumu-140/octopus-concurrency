@@ -54,5 +54,7 @@ func MaybeApply(req *transformerModel.InternalLLMRequest, group dbmodel.Group) {
 	if after < before {
 		log.Debugf("compress: group=%d saved=%.1f%% before=%d after=%d elapsed=%s",
 			group.ID, float64(before-after)/float64(before)*100, before, after, time.Since(start))
+		// 暂存压缩统计到请求对象上,relay metrics 落库日志时读取(json:"-" 不外发)。
+		req.CompressStats = &transformerModel.CompressStats{BeforeBytes: before, AfterBytes: after}
 	}
 }

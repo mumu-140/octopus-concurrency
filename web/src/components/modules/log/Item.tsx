@@ -705,6 +705,14 @@ export function LogCard({ log, siteTargets }: { log: RelayLog; siteTargets: LogS
                                                 {formatCompactTokenCount(log.cache_read_tokens)}
                                             </Badge>
                                         ) : null}
+                                        {log.compress_saved_pct != null && log.compress_saved_pct > 0 ? (
+                                            <Badge
+                                                variant="secondary"
+                                                className="shrink-0 px-1.5 py-0 text-[11px] bg-teal-500/15 text-teal-600 dark:text-teal-400"
+                                            >
+                                                {t('compressSaved')} −{log.compress_saved_pct}%
+                                            </Badge>
+                                        ) : null}
                                     </span>
                                 </div>
                                 <div className="flex items-center gap-1.5">
@@ -944,6 +952,14 @@ export function LogCard({ log, siteTargets }: { log: RelayLog; siteTargets: LogS
                                             <div className="flex items-center gap-2 px-3 md:px-4 py-2.5 md:py-3 border-b border-border bg-muted/50 shrink-0">
                                                 <Send className="size-4 text-green-500" />
                                                 <span className="text-sm font-medium text-card-foreground">{t('requestContent')}</span>
+                                                {displayLog.compress_saved_pct != null && displayLog.compress_saved_pct > 0 ? (
+                                                    <Badge
+                                                        variant="secondary"
+                                                        className="shrink-0 text-xs bg-teal-500/15 text-teal-600 dark:text-teal-400"
+                                                    >
+                                                        {t('compressSaved')} −{displayLog.compress_saved_pct}%
+                                                    </Badge>
+                                                ) : null}
                                                 <Badge variant="secondary" className="ml-auto text-xs">
                                                     {getHeadlineInputTokens(displayLog).toLocaleString()} {t('tokens')}
                                                 </Badge>

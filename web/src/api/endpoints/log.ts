@@ -65,6 +65,7 @@ export interface RelayLog {
     bill_input_tokens?: number | null; // 按常规输入价格计费的 Token
     cache_read_tokens?: number | null; // 从缓存读取的 Token
     cache_write_tokens?: number | null; // 写入缓存的 Token
+    compress_saved_pct?: number | null; // 请求压缩节省百分比 0-100，未压缩为 null
     output_tokens: number;       // 输出Token
     ftut: number;                // 首字时间(毫秒)
     use_time: number;            // 总用时(毫秒)

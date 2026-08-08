@@ -384,6 +384,20 @@ type InternalLLMRequest struct {
 	// Query stores the original query parameters from the inbound request.
 	// This is a help field and will not be sent to the llm service.
 	Query url.Values `json:"-"`
+
+	// CompressStats records the request compression result (gateway-side, before
+	// relaying to the upstream). It is populated by internal/relay/compress when a
+	// group's compress_config is enabled and the global master switch is on, and is
+	// consumed by relay metrics to log the savings. json:"-" keeps it out of any
+	// outbound serialization.
+	CompressStats *CompressStats `json:"-"`
+}
+
+// CompressStats captures the byte size of the serialized message list before and
+// after request compression ran. It is internal-only (never sent upstream).
+type CompressStats struct {
+	BeforeBytes int `json:"before_bytes"`
+	AfterBytes  int `json:"after_bytes"`
 }
 
 func (r *InternalLLMRequest) Validate() error {

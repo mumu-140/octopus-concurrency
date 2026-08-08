@@ -447,6 +447,13 @@
     "reliability": {
       "title": "Reliability"
     },
+    "compress": {
+      "title": "Request Compression",
+      "enabled": {
+        "label": "Enable request compression",
+        "description": "Global master switch for request compression. Compression only takes effect for groups whose compress_config is also enabled. Turning this off immediately stops compression for all groups."
+      }
+    },
     "syncTasks": {
       "title": "Sync & Scheduled Tasks",
       "intervalPlaceholder": "Interval (hours)",
@@ -483,7 +490,9 @@
     },
     "data": {
       "title": "Data Management"
-    }
+    },
+    "json": "JSON",
+    "logs": "Logs"
   },
   "group": {
     "toast": {
@@ -572,7 +581,44 @@
       "autoAdd": "Auto Add",
       "clear": "Clear",
       "selectChannel": "Channel",
-      "selectModel": "Model"
+      "selectModel": "Model",
+      "compress": {
+        "title": "Request Compression",
+        "off": "Off",
+        "expand": "Expand compression settings",
+        "collapse": "Collapse compression settings",
+        "summary": "Compresses the request before it is sent upstream",
+        "summaryOff": "Request compression is off for this group",
+        "hint": "Reduces the request payload before sending upstream. Also requires the global switch in Settings.",
+        "enabled": {
+          "label": "Enable compression"
+        },
+        "tier": {
+          "label": "Level",
+          "low": "Low",
+          "medium": "Medium",
+          "high": "High",
+          "custom": "Custom"
+        },
+        "engines": {
+          "label": "Advanced engines",
+          "lite": {
+            "label": "Lite",
+            "description": "Whitespace folding, system-prompt dedup, and tool-result head/tail truncation"
+          },
+          "headroom": {
+            "label": "Headroom",
+            "description": "Converts homogeneous JSON arrays into a columnar table (lossless)"
+          },
+          "outputStyle": {
+            "label": "Output style",
+            "description": "Injects a terse-output style hint into the request",
+            "off": "Off",
+            "terse-prose": "Terse prose",
+            "terse-cjk": "Terse CJK"
+          }
+        }
+      }
     },
     "mode": {
       "roundRobin": "Round Robin",
@@ -775,7 +821,8 @@
       "transportInput": "Transport Input",
       "billInput": "Billed Input",
       "cacheRead": "Cache Read",
-      "cacheWrite": "Cache Write"
+      "cacheWrite": "Cache Write",
+      "compressSaved": "Compress"
     },
     "filters": {
       "keywordPlaceholder": "Search model, API key or content",

@@ -447,6 +447,13 @@
     "reliability": {
       "title": "可靠性"
     },
+    "compress": {
+      "title": "请求压缩",
+      "enabled": {
+        "label": "启用请求压缩",
+        "description": "请求压缩的全局总开关。仅当分组的压缩配置(compress_config)也开启时才会生效;关闭后立即对所有分组停止压缩。"
+      }
+    },
     "syncTasks": {
       "title": "同步与定时任务",
       "intervalPlaceholder": "间隔（小时）",
@@ -483,7 +490,9 @@
     },
     "data": {
       "title": "数据管理"
-    }
+    },
+    "json": "JSON",
+    "logs": "日志"
   },
   "group": {
     "toast": {
@@ -572,7 +581,44 @@
       "autoAdd": "自动添加",
       "clear": "清空",
       "selectChannel": "渠道",
-      "selectModel": "模型"
+      "selectModel": "模型",
+      "compress": {
+        "title": "请求压缩",
+        "off": "关闭",
+        "expand": "展开压缩设置",
+        "collapse": "收起压缩设置",
+        "summary": "发送到上游前对请求进行压缩",
+        "summaryOff": "此分组未开启请求压缩",
+        "hint": "在发送到上游前减小请求体大小。还需在设置中开启全局开关。",
+        "enabled": {
+          "label": "启用压缩"
+        },
+        "tier": {
+          "label": "档位",
+          "low": "低",
+          "medium": "中",
+          "high": "高",
+          "custom": "自定义"
+        },
+        "engines": {
+          "label": "高级引擎",
+          "lite": {
+            "label": "轻量压缩",
+            "description": "空白折叠、system 提示去重、tool 结果保头保尾截断"
+          },
+          "headroom": {
+            "label": "列式压缩",
+            "description": "将同构 JSON 数组转换为列式表(信息无损)"
+          },
+          "outputStyle": {
+            "label": "输出风格",
+            "description": "向请求注入简洁输出的风格提示",
+            "off": "关闭",
+            "terse-prose": "简洁行文",
+            "terse-cjk": "简洁中文"
+          }
+        }
+      }
     },
     "mode": {
       "roundRobin": "轮询",
@@ -775,7 +821,8 @@
       "transportInput": "传输输入",
       "billInput": "计费输入",
       "cacheRead": "缓存读取",
-      "cacheWrite": "缓存写入"
+      "cacheWrite": "缓存写入",
+      "compressSaved": "压缩"
     },
     "filters": {
       "keywordPlaceholder": "搜索模型、API Key 或内容",

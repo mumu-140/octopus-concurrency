@@ -40,6 +40,7 @@ export const SettingKey = {
     OutlierRecoverStreak: 'outlier_recover_streak',
     OutlierReapMinutes: 'outlier_reap_minutes',
     OutlierCFRecoverMinutes: 'outlier_cf_recover_minutes',
+    CompressMasterEnabled: 'compress_master_enabled',
     ApiBaseUrl: 'api_base_url',
 } as const;
 

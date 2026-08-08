@@ -7,6 +7,7 @@ import { SettingAccount } from './Account';
 import { SettingInfo } from './Info';
 import { SettingNetwork } from './Network';
 import { SettingReliability } from './Reliability';
+import { SettingCompress } from './Compress';
 import { SettingSyncTasks } from './SyncTasks';
 import { SettingData } from './Data';
 import { GlobalPolicyCard } from '@/components/modules/protocol-routing/GlobalPolicyCard';
@@ -21,6 +22,7 @@ export function Setting() {
                 <SettingNetwork key="setting-network" />
                 <SettingAccount key="setting-account" />
                 <SettingReliability key="setting-reliability" />
+                <SettingCompress key="setting-compress" />
                 <GlobalPolicyCard key="protocol-routing" />
                 <SettingSyncTasks key="setting-sync-tasks" />
                 <SettingData key="setting-data" />

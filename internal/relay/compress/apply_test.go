@@ -120,6 +120,14 @@ func TestMaybeApplyChainWorks(t *testing.T) {
 	if !containsText(req.Messages, styleMarker) {
 		t.Fatalf("output style injection missing")
 	}
+	// 压缩统计应暂存到请求对象,供 relay metrics 落库。
+	if req.CompressStats == nil {
+		t.Fatalf("expected CompressStats to be set on successful compression")
+	}
+	if req.CompressStats.BeforeBytes != before || req.CompressStats.AfterBytes != after {
+		t.Fatalf("CompressStats = {before=%d after=%d}, want {before=%d after=%d}",
+			req.CompressStats.BeforeBytes, req.CompressStats.AfterBytes, before, after)
+	}
 }
 
 func TestMaybeApplyEmptyMessages(t *testing.T) {

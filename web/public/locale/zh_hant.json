@@ -447,6 +447,13 @@
     "reliability": {
       "title": "可靠性"
     },
+    "compress": {
+      "title": "請求壓縮",
+      "enabled": {
+        "label": "啟用請求壓縮",
+        "description": "請求壓縮的全域總開關。僅當分組的壓縮配置(compress_config)也開啟時才會生效;關閉後立即對所有分組停止壓縮。"
+      }
+    },
     "syncTasks": {
       "title": "同步與定時任務",
       "intervalPlaceholder": "間隔（小時）",
@@ -483,7 +490,9 @@
     },
     "data": {
       "title": "資料管理"
-    }
+    },
+    "json": "JSON",
+    "logs": "日誌"
   },
   "group": {
     "toast": {
@@ -572,7 +581,44 @@
       "autoAdd": "自動新增",
       "clear": "清空",
       "selectChannel": "供應源",
-      "selectModel": "模型"
+      "selectModel": "模型",
+      "compress": {
+        "title": "請求壓縮",
+        "off": "關閉",
+        "expand": "展開壓縮設定",
+        "collapse": "收起壓縮設定",
+        "summary": "傳送到上游前對請求進行壓縮",
+        "summaryOff": "此分組未開啟請求壓縮",
+        "hint": "在傳送到上游前減小請求體大小。還需在設定中開啟全域開關。",
+        "enabled": {
+          "label": "啟用壓縮"
+        },
+        "tier": {
+          "label": "檔位",
+          "low": "低",
+          "medium": "中",
+          "high": "高",
+          "custom": "自訂"
+        },
+        "engines": {
+          "label": "進階引擎",
+          "lite": {
+            "label": "輕量壓縮",
+            "description": "空白摺疊、system 提示去重、tool 結果保頭保尾截斷"
+          },
+          "headroom": {
+            "label": "欄式壓縮",
+            "description": "將同構 JSON 陣列轉換為欄式表(資訊無損)"
+          },
+          "outputStyle": {
+            "label": "輸出風格",
+            "description": "向請求注入簡潔輸出的風格提示",
+            "off": "關閉",
+            "terse-prose": "簡潔行文",
+            "terse-cjk": "簡潔中文"
+          }
+        }
+      }
     },
     "mode": {
       "roundRobin": "輪詢",
@@ -775,7 +821,8 @@
       "transportInput": "傳輸輸入",
       "billInput": "計費輸入",
       "cacheRead": "快取讀取",
-      "cacheWrite": "快取寫入"
+      "cacheWrite": "快取寫入",
+      "compressSaved": "壓縮"
     },
     "filters": {
       "keywordPlaceholder": "搜尋模型、API Key 或內容",

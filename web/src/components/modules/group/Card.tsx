@@ -15,7 +15,7 @@ import { MemberList } from './ItemList';
 import { GroupEditor, type GroupEditorValues } from './Editor';
 import { GroupHealthBadge } from './health';
 import { modelChannelKey, MODE_LABELS } from './utils';
-import { GroupMode, type GroupUpdateRequest, normalizeGroupProtocolMode, normalizePreferredProtocols } from '@/api/endpoints/group';
+import { GroupMode, type GroupUpdateRequest, normalizeGroupCompressConfig, normalizeGroupProtocolMode, normalizePreferredProtocols } from '@/api/endpoints/group';
 import { PresetPopover } from './PresetPopover';
 import { ProtocolPolicyPopover } from './ProtocolPolicyPopover';
 import { buildGroupMemberChanges } from './groupMemberDiff';
@@ -63,6 +63,7 @@ function EditDialogContent({ group, displayMembers, isSubmitting, onSubmit }: Ed
                         max_retries: group.max_retries ?? 3,
                         protocol_mode: normalizeGroupProtocolMode(group.protocol_mode),
                         preferred_protocols: normalizePreferredProtocols(group.preferred_protocols),
+                        compress_config: normalizeGroupCompressConfig(group.compress_config),
                         members: displayMembers,
                     }}
                     submitText={t('detail.actions.save')}
@@ -243,6 +244,14 @@ export function GroupCard({ group }: { group: Group }) {
         const nextPreferred = values.preferred_protocols ?? [];
         const prevPreferred = normalizePreferredProtocols(group.preferred_protocols);
         if (JSON.stringify(nextPreferred) !== JSON.stringify(prevPreferred)) payload.preferred_protocols = nextPreferred;
+        // 压缩配置:整体替换;关闭(values.compress_config undefined)且曾开启过时显式发 enabled:false。
+        const prevCompress = normalizeGroupCompressConfig(group.compress_config);
+        const nextCompress = values.compress_config;
+        if (nextCompress === undefined) {
+            if (prevCompress?.enabled) payload.compress_config = { enabled: false, lite: false, headroom: false, output_style: '' };
+        } else if (JSON.stringify(nextCompress) !== JSON.stringify(prevCompress)) {
+            payload.compress_config = nextCompress;
+        }
         if (items_to_add.length) payload.items_to_add = items_to_add;
         if (items_to_update.length) payload.items_to_update = items_to_update;
         if (items_to_delete.length) payload.items_to_delete = items_to_delete;
@@ -259,7 +268,7 @@ export function GroupCard({ group }: { group: Group }) {
             },
             onError,
         });
-    }, [group.first_token_time_out, group.session_keep_time, group.retry_enabled, group.max_retries, group.protocol_mode, group.preferred_protocols, group.id, group.items, group.match_regex, group.mode, group.name, onSuccess, onError, updateGroup]);
+    }, [group.first_token_time_out, group.session_keep_time, group.retry_enabled, group.max_retries, group.protocol_mode, group.preferred_protocols, group.compress_config, group.id, group.items, group.match_regex, group.mode, group.name, onSuccess, onError, updateGroup]);
 
     return (
         <article className="relative group/card flex flex-col rounded-3xl border border-border bg-card text-card-foreground p-4 custom-shadow">

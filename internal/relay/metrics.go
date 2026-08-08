@@ -275,6 +275,13 @@ func (m *RelayMetrics) saveLog(ctx context.Context, success bool, err error, dur
 	relayLog.BillInputTokens = m.BillInputTokens
 	relayLog.CacheReadTokens = m.CacheReadTokens
 	relayLog.CacheWriteTokens = m.CacheWriteTokens
+	// 请求压缩节省百分比:compress.MaybeApply 生效后暂存于请求对象。
+	if m.InternalRequest != nil {
+		if cs := m.InternalRequest.CompressStats; cs != nil && cs.BeforeBytes > 0 && cs.AfterBytes < cs.BeforeBytes {
+			pct := (cs.BeforeBytes - cs.AfterBytes) * 100 / cs.BeforeBytes
+			relayLog.CompressSavedPct = &pct
+		}
+	}
 	relayLog.WSMode = m.WSMode
 	relayLog.WSExecMode = m.WSExecMode
 	relayLog.WSRecovery = m.WSRecovery
