@@ -43,7 +43,8 @@ export function CompressSection({
         onChange({ ...current, ...partial });
     };
     const toggleEnabled = (checked: boolean) => {
-        onChange(checked ? current : undefined); // 关闭 → undefined,提交时清除压缩配置
+        // 开启必须显式写 enabled:true;current.enabled 取自旧 value,直接回传会把开关钉死在关闭。
+        onChange(checked ? { ...current, enabled: true } : undefined); // 关闭 → undefined,提交时清除压缩配置
     };
 
     return (

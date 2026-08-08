@@ -383,8 +383,10 @@ export function GroupEditor({
 
     return (
         <form onSubmit={handleSubmit} className="flex flex-col h-full min-h-0 ">
-            <div className="flex-1 min-h-0 overflow-hidden px-1">
-                <FieldGroup className="gap-4 flex flex-col min-h-0 h-full">
+            {/* 主体可滚动:协议/压缩段展开后总高超出容器时靠这里滚,不能用 overflow-hidden 裁掉模型列表。
+                FieldGroup 用 min-h-full 而非 h-full,内容少时占满、内容多时可向下生长。 */}
+            <div className="flex-1 min-h-0 overflow-y-auto px-1">
+                <FieldGroup className="gap-4 flex flex-col min-h-full">
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                         <Field>
                             <FieldLabel htmlFor="group-name">{nameLabel ?? t('form.name')}</FieldLabel>
@@ -558,8 +560,8 @@ export function GroupEditor({
                         />
                     ) : null}
 
-                    <div className="flex-1 min-h-0 overflow-hidden">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 h-full min-h-[18rem]">
+                    <div className="flex-1 min-h-[18rem] overflow-hidden">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 h-full">
                             <ModelPickerSection
                                 modelChannels={modelChannels}
                                 selectedMembers={selectedMembers}
