@@ -134,6 +134,10 @@ func GroupUpdate(req *model.GroupUpdateRequest, ctx context.Context) (*model.Gro
 		updates.ProtocolMode = protocolMode
 		updates.PreferredProtocols = preferredProtocols
 	}
+	if req.CompressConfig != nil {
+		selectFields = append(selectFields, "compress_config")
+		updates.CompressConfig = req.CompressConfig
+	}
 
 	if len(selectFields) > 0 {
 		if err := tx.Model(&model.Group{}).Where("id = ?", req.ID).Select(selectFields).Updates(&updates).Error; err != nil {

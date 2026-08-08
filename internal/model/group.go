@@ -25,8 +25,10 @@ type Group struct {
 	ActivePresetID     *int               `json:"active_preset_id,omitempty"`         // 当前激活的预设ID，仅 UI 标记，不参与路由
 	ProtocolMode       ProtocolPolicyMode `json:"protocol_mode" gorm:"type:varchar(16);not null;default:'follow'"`
 	PreferredProtocols []string           `json:"preferred_protocols" gorm:"serializer:json"`
-	PolicyRevision     int64              `json:"policy_revision" gorm:"not null;default:0"`
-	Items              []GroupItem        `json:"items,omitempty" gorm:"foreignKey:GroupID"`
+	// 请求压缩配置, nil 为关闭(默认)。生效还需全局 compress_master_enabled 开启。
+	CompressConfig *GroupCompressConfig `json:"compress_config,omitempty" gorm:"serializer:json"`
+	PolicyRevision int64                `json:"policy_revision" gorm:"not null;default:0"`
+	Items          []GroupItem          `json:"items,omitempty" gorm:"foreignKey:GroupID"`
 }
 
 type GroupItem struct {
@@ -79,7 +81,9 @@ type GroupUpdateRequest struct {
 	MaxRetries         *int                     `json:"max_retries,omitempty"`          // 同通道最大重试次数
 	ProtocolMode       *ProtocolPolicyMode      `json:"protocol_mode,omitempty"`
 	PreferredProtocols *[]string                `json:"preferred_protocols,omitempty"`
-	ItemsToAdd         []GroupItemAddRequest    `json:"items_to_add,omitempty"`    // 新增的 items
+	// 请求压缩配置(整体替换; 关闭传 {"enabled":false} 即可)
+	CompressConfig *GroupCompressConfig     `json:"compress_config,omitempty"`
+	ItemsToAdd     []GroupItemAddRequest    `json:"items_to_add,omitempty"`    // 新增的 items
 	ItemsToUpdate      []GroupItemUpdateRequest `json:"items_to_update,omitempty"` // 更新的 items (priority 变更)
 	ItemsToDelete      []int                    `json:"items_to_delete,omitempty"` // 删除的 item IDs
 }

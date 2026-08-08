@@ -12,6 +12,7 @@ import (
 	"github.com/bestruirui/octopus/internal/protocol"
 	"github.com/bestruirui/octopus/internal/protocolroute"
 	"github.com/bestruirui/octopus/internal/relay/balancer"
+	"github.com/bestruirui/octopus/internal/relay/compress"
 	"github.com/bestruirui/octopus/internal/server/resp"
 	"github.com/bestruirui/octopus/internal/transformer/inbound"
 	"github.com/bestruirui/octopus/internal/transformer/model"
@@ -57,6 +58,8 @@ func newRelayHandler(inboundType inbound.InboundType, c *gin.Context) (*relayHan
 		resp.ErrorWithCode(c, http.StatusNotFound, CodeRelayModelNotFound, "model not found")
 		return nil, false
 	}
+	// 请求压缩挂点: 分组配置 + 全局 master 均开启时生效; fail-open, 不影响转发
+	compress.MaybeApply(request, group)
 	request, replayState := prepareHTTPReplay(inboundType, c.GetInt("api_key_id"), group.ID, request.Model, request)
 	iterator := newRelayIterator(group, c.GetInt("api_key_id"), request.Model, replayState)
 	if iterator.Len() == 0 {
