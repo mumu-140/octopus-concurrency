@@ -71,17 +71,17 @@ scripts/check-governance.sh --live
 
 | 项目 | 值 |
 | --- | --- |
-| 运行版本 | `v0.10.2-mumu.11` |
-| 应用源码 | `97cd89444af403042407b4bb1a5e7bc19f7e96ab` |
-| 当前运行状态记录提交 | `2b5f312945d0bdfcd456ba28ee5d65527d7609bf` |
-| 生产镜像 | `mumu-140/octopus-concurrency:v0.10.2-mumu.11` |
-| 镜像 ID | `sha256:92d2a6b89df27f8781371fb493d7e1c3b48e1ea249b6a7ab2f1a979329109ce1` |
-| 容器 | `octopus` / `8d607f4046131c009134fb2d074113ec0ae0fd739f8109835c2e1fba8a15bc23` |
+| 运行版本 | `v0.10.2-mumu.12` |
+| 应用源码 | `c39afe2b2b669ea66beed07722c18d30f405fb07` |
+| 当前运行状态记录提交 | `a01a48c38aa9976b3ab2f3a6fbd57b8fb7670e74` |
+| 生产镜像 | `mumu-140/octopus-concurrency:v0.10.2-mumu.12` |
+| 镜像 ID | `sha256:cb6229409bb9ba904a15408ddf4f41b15efb231a8f1f3e12ee226b1126f5f1b5` |
+| 容器 | `octopus` / `e4df620743dbcc9a5b4789bf68a9e0a2ce64dd170997f1cc877d235223a16287` |
 | 网络与监听 | `host` / `0.0.0.0:35276` |
 | 数据挂载 | `/home/yangs/API/octopus/data:/app/data` |
 | Compose 副本 | `/home/yangs/API/octopus/docker-compose.yml` |
-| 回滚容器 | `octopus-mumu9-rollback-20260726T025221Z` |
-| 回滚快照 | `/home/yangs/API/octopus/backups/pre-v0.10.2-mumu.11-cutover-20260726T025221Z/` |
+| 回滚容器 | 无常驻（上次 cutover 后已清理；下次部署前须按流程先行重建） |
+| 回滚快照 | `/home/yangs/API/octopus/backups/pre-v0.10.2-mumu.12-cutover-20260726T094454Z/` |
 
 `.11` 从 `.9` 行为基线重新实现模型、最终渠道和请求分组三维小时统计；`.10` 的
 `stats_dimension*` 实现和 tag 已废弃。生产三维必须逐项对账成功、失败、输入/输出 Token
