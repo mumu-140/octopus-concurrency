@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import { SW_MESSAGE_TYPE } from '@/lib/sw';
+import { APP_VERSION } from '@/lib/info';
 
 export function ServiceWorkerRegister() {
     useEffect(() => {
@@ -28,7 +29,11 @@ export function ServiceWorkerRegister() {
         navigator.serviceWorker.addEventListener('controllerchange', onControllerChange);
 
         navigator.serviceWorker
-            .register('/sw.js', { scope: '/' })
+            // `?v=` makes the SW script URL change every release: the browser then fetches
+            // and installs a new worker, whose `activate` purges the previous release's
+            // caches. Registering the same scope with a new script URL replaces the old
+            // registration rather than adding one.
+            .register(`/sw.js?v=${encodeURIComponent(APP_VERSION)}`, { scope: '/' })
             .then((registration) => {
                 // If an update is already waiting, activate it immediately.
                 if (registration.waiting) {

@@ -4,11 +4,16 @@
 /**
  * Cache naming
  * - Prefix MUST match `web/src/lib/sw.ts` (OCTOPUS_CACHE_PREFIX)
- * - Bump CACHE_VERSION when you change caching behavior in this file
+ * - CACHE_VERSION comes from the `?v=` on the registration URL (see `sw-register.tsx`),
+ *   so every release gets its own cache namespace and `activate` drops the previous one.
+ *   Without this, a release that leaves sw.js byte-identical installs no new worker, never
+ *   purges the old caches, and a single failed navigation fetch pins the browser to the
+ *   previous release's HTML + its Cache-First hashed chunks indefinitely.
+ * - Falls back to 'v1' when no `?v=` is present (older registration still in the wild).
  * - FONT cache is version-independent (fonts persist across updates)
  */
 const CACHE_PREFIX = 'octopus';
-const CACHE_VERSION = 'v1';
+const CACHE_VERSION = new URL(self.location.href).searchParams.get('v') || 'v1';
 const CACHE_NAMES = {
     static: `${CACHE_PREFIX}-static-${CACHE_VERSION}`,
     app: `${CACHE_PREFIX}-app-${CACHE_VERSION}`,
