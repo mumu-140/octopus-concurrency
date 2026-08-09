@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../client';
 import { logger } from '@/lib/logger';
 import { AutoGroupType } from './channel';
+import type { GroupCompressConfig } from '@/components/modules/group/groupCompressConfig';
 
 /**
  * 分组项信息
@@ -65,59 +66,20 @@ export function normalizePreferredProtocols(value: unknown): ProtocolName[] {
     return out;
 }
 
-/**
- * 分组级请求压缩配置。与后端 model.GroupCompressConfig 字段对应。
- * enabled 为分组压缩总开关(还需全局 compress_master_enabled 开启才生效)。
- * lite: 空白折叠 + system 去重 + tool 结果截断; headroom: 同构 JSON 数组转列式表;
- * output_style: 输出风格注入("" | "terse-prose" | "terse-cjk")。
- */
-export type CompressOutputStyle = '' | 'terse-prose' | 'terse-cjk';
-
-export interface GroupCompressConfig {
-    enabled: boolean;
-    lite: boolean;
-    headroom: boolean;
-    output_style: CompressOutputStyle;
-}
-
-export type CompressTier = 'low' | 'medium' | 'high' | 'custom';
-
-const OUTPUT_STYLES: CompressOutputStyle[] = ['', 'terse-prose', 'terse-cjk'];
-
-function normalizeOutputStyle(value: unknown): CompressOutputStyle {
-    return (OUTPUT_STYLES as string[]).includes(value as string) ? (value as CompressOutputStyle) : '';
-}
-
-export function normalizeGroupCompressConfig(value: unknown): GroupCompressConfig | undefined {
-    if (!value || typeof value !== 'object') return undefined;
-    const v = value as Record<string, unknown>;
-    return {
-        enabled: v.enabled === true,
-        lite: v.lite !== false,        // 默认开启最低档
-        headroom: v.headroom === true,
-        output_style: normalizeOutputStyle(v.output_style),
-    };
-}
-
-// 预设档位 → 引擎组合。low 为最低档(默认)。
-export function compressConfigForTier(tier: Exclude<CompressTier, 'custom'>): GroupCompressConfig {
-    switch (tier) {
-        case 'low':
-            return { enabled: true, lite: true, headroom: false, output_style: '' };
-        case 'medium':
-            return { enabled: true, lite: true, headroom: true, output_style: '' };
-        case 'high':
-            return { enabled: true, lite: true, headroom: true, output_style: 'terse-prose' };
-    }
-}
-
-// 由引擎组合反推档位;无法匹配预设档时返回 'custom'。
-export function compressTierOf(cfg: GroupCompressConfig): CompressTier {
-    if (cfg.lite && !cfg.headroom && cfg.output_style === '') return 'low';
-    if (cfg.lite && cfg.headroom && cfg.output_style === '') return 'medium';
-    if (cfg.lite && cfg.headroom && cfg.output_style === 'terse-prose') return 'high';
-    return 'custom';
-}
+// 分组级请求压缩配置的类型与纯逻辑集中在 groupCompressConfig.ts(无依赖,便于 web/tests 直接导入)。
+// 此处保留再导出，既有 '@/api/endpoints/group' 的导入点无需改动。
+export {
+    compressConfigForTier,
+    compressConfigPayload,
+    compressTierOf,
+    nextCompressConfigForToggle,
+    normalizeGroupCompressConfig,
+} from '@/components/modules/group/groupCompressConfig';
+export type {
+    CompressOutputStyle,
+    CompressTier,
+    GroupCompressConfig,
+} from '@/components/modules/group/groupCompressConfig';
 
 
 /**

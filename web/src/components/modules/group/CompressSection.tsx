@@ -8,6 +8,7 @@ import { Switch } from '@/components/ui/switch';
 import {
     compressConfigForTier,
     compressTierOf,
+    nextCompressConfigForToggle,
     type CompressOutputStyle,
     type CompressTier,
     type GroupCompressConfig,
@@ -43,8 +44,8 @@ export function CompressSection({
         onChange({ ...current, ...partial });
     };
     const toggleEnabled = (checked: boolean) => {
-        // 开启必须显式写 enabled:true;current.enabled 取自旧 value,直接回传会把开关钉死在关闭。
-        onChange(checked ? { ...current, enabled: true } : undefined); // 关闭 → undefined,提交时清除压缩配置
+        // 开启必须显式写 enabled:true(见 nextCompressConfigForToggle);关闭 → undefined,提交时清除配置。
+        onChange(nextCompressConfigForToggle(current, checked));
     };
 
     return (

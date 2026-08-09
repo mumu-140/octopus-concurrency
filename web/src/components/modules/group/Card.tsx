@@ -15,7 +15,7 @@ import { MemberList } from './ItemList';
 import { GroupEditor, type GroupEditorValues } from './Editor';
 import { GroupHealthBadge } from './health';
 import { modelChannelKey, MODE_LABELS } from './utils';
-import { GroupMode, type GroupUpdateRequest, normalizeGroupCompressConfig, normalizeGroupProtocolMode, normalizePreferredProtocols } from '@/api/endpoints/group';
+import { compressConfigPayload, GroupMode, type GroupUpdateRequest, normalizeGroupCompressConfig, normalizeGroupProtocolMode, normalizePreferredProtocols } from '@/api/endpoints/group';
 import { PresetPopover } from './PresetPopover';
 import { ProtocolPolicyPopover } from './ProtocolPolicyPopover';
 import { buildGroupMemberChanges } from './groupMemberDiff';
@@ -245,13 +245,11 @@ export function GroupCard({ group }: { group: Group }) {
         const prevPreferred = normalizePreferredProtocols(group.preferred_protocols);
         if (JSON.stringify(nextPreferred) !== JSON.stringify(prevPreferred)) payload.preferred_protocols = nextPreferred;
         // 压缩配置:整体替换;关闭(values.compress_config undefined)且曾开启过时显式发 enabled:false。
-        const prevCompress = normalizeGroupCompressConfig(group.compress_config);
-        const nextCompress = values.compress_config;
-        if (nextCompress === undefined) {
-            if (prevCompress?.enabled) payload.compress_config = { enabled: false, lite: false, headroom: false, output_style: '' };
-        } else if (JSON.stringify(nextCompress) !== JSON.stringify(prevCompress)) {
-            payload.compress_config = nextCompress;
-        }
+        const nextCompressPayload = compressConfigPayload(
+            normalizeGroupCompressConfig(group.compress_config),
+            values.compress_config,
+        );
+        if (nextCompressPayload !== undefined) payload.compress_config = nextCompressPayload;
         if (items_to_add.length) payload.items_to_add = items_to_add;
         if (items_to_update.length) payload.items_to_update = items_to_update;
         if (items_to_delete.length) payload.items_to_delete = items_to_delete;

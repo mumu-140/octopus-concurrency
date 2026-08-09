@@ -76,3 +76,8 @@ jobs:
 
       - name: Lint
         run: pnpm lint
+
+      # web/tests 是纯逻辑回归测试(node:test + TypeScript 类型剥离，需 Node >= 22.18)。
+      # 此前只在本地手动跑过，CI 不执行 —— 分组压缩开关的缺陷因此两次进入发布。
+      - name: Test
+        run: pnpm test

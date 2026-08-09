@@ -53,11 +53,26 @@ func (ra *relayAttempt) forward() (int, error) {
 	return ra.forwardViaHTTP(ctx)
 }
 
+// rawBodyStillAuthoritative reports whether the original client bytes are still a
+// faithful representation of the request we intend to send upstream.
+//
+// Gateway-side request compression rewrites internalRequest.Messages in place but
+// leaves rawBody untouched. Forwarding rawBody in that case would silently drop
+// the compression result while the relay log still recorded the savings, so such
+// requests must take the standard path and be re-serialized from Messages.
+func rawBodyStillAuthoritative(request *model.InternalLLMRequest) bool {
+	if request == nil {
+		return false
+	}
+	return request.CompressStats == nil
+}
+
 // forwardViaHTTP forwards the request using traditional HTTP.
 func (ra *relayAttempt) forwardViaHTTP(ctx context.Context) (int, error) {
 	// Check for passthrough capability using interface
 	if pt, ok := ra.outAdapter.(model.PassthroughCapable); ok &&
 		len(ra.rawBody) > 0 &&
+		rawBodyStillAuthoritative(ra.internalRequest) &&
 		pt.CanPassthrough(ra.internalRequest.RawAPIFormat) {
 		// Additional checks for OpenAI Responses edge cases
 		if ra.internalRequest.RawAPIFormat == model.APIFormatOpenAIResponse {
