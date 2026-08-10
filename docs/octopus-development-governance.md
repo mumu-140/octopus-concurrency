@@ -23,9 +23,20 @@ inspect 证据为准。以下四项必须分别记录，不得相互推导：
 
 `main` 更新、Release 成功、镜像已存在和容器已切换是四个不同状态。
 
-## 目录与职责
+## 当前生产台账
 
-| 对象 | 规范位置 | 允许操作 | 禁止事项 |
+`deploy/fwq57ys/production-state.json` 是当前生产运行指纹的唯一机器可读台账。最近一次已核验的
+生产版本为 `v0.10.2-mumu.17`：应用源码提交为
+`5447e843f6cb54f07809d3bb1cdf4908c050b912`，生产状态提交为
+`0c47358651f44f9a121d16aeaca4af128423dcb9`，运行镜像 ID 为
+`sha256:5c2a02f32bedcc8647d8cce490a9812066abd41eb69c487fe7cb25b89f3a34f9`，容器 ID 为
+`b64dc3dd9dc30966b6ac2238ce7069b0d04ce04d697f0d33793798e82d248a08`。
+
+本次切换后台任务 `v0.10.2-mumu.17-cutover-20260810T011706Z` 已完成；`.16`、`.17` 候选容器、
+候选数据副本以及历史测试副本 `/home/yangs/working/octopus-candidate-14` 和
+`/home/yangs/API/octopus/concurrency-test-data` 已按授权精确清理。生产数据、正式回滚容器和
+回滚快照未删除。
+
 | --- | --- | --- | --- |
 | 唯一源码 | `/home/yangs/API/octopus-mumu/` | 开发、测试、构建、提交 | 不在第二份源码中继续工作 |
 | 生产控制面 | `/home/yangs/API/octopus/` | Compose 副本、真实数据、备份、部署证据 | 不初始化 Git、不放源码、不构建 |
