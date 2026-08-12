@@ -624,7 +624,11 @@
       "roundRobin": "Round Robin",
       "random": "Random",
       "failover": "Failover",
-      "weighted": "Weighted"
+      "weighted": "Weighted",
+      "healthFirst": "Health First",
+      "leastUsed": "Least Used",
+      "p2c": "P2C",
+      "strictRandom": "Strict Random"
     },
     "health": {
       "title": "Health",

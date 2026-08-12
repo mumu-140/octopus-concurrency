@@ -12,7 +12,8 @@ import { Switch } from '@/components/ui/switch';
 import { Accordion, AccordionContent, AccordionItem } from '@/components/ui/accordion';
 import { cn } from '@/lib/utils';
 import { getModelIcon } from '@/lib/model-icons';
-import type { GroupCompressConfig, GroupMode, GroupProtocolMode, ProtocolName } from '@/api/endpoints/group';
+import { GroupMode } from '@/api/endpoints/group';
+import type { GroupCompressConfig, GroupProtocolMode, ProtocolName } from '@/api/endpoints/group';
 import { normalizeGroupCompressConfig, normalizeGroupProtocolMode, normalizePreferredProtocols } from '@/api/endpoints/group';
 import type { SelectedMember } from './ItemList';
 import { MemberList } from './ItemList';
@@ -485,7 +486,7 @@ export function GroupEditor({
                     {/* Mode + Retry Toggle */}
                     <div className="flex items-center gap-2">
                         <div className="flex gap-1 flex-1">
-                            {([1, 2, 3, 4] as const).map((m) => (
+                            {([GroupMode.RoundRobin, GroupMode.Random, GroupMode.Failover, GroupMode.Weighted, GroupMode.HealthFirst, GroupMode.LeastUsed, GroupMode.P2C, GroupMode.StrictRandom] as const).map((m) => (
                                 <button
                                     key={m}
                                     type="button"

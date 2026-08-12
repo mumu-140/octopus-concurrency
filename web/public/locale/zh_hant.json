@@ -624,7 +624,11 @@
       "roundRobin": "輪詢",
       "random": "隨機",
       "failover": "故障轉移",
-      "weighted": "加權分配"
+      "weighted": "加權分配",
+      "healthFirst": "健康優先",
+      "leastUsed": "最少使用",
+      "p2c": "二選一",
+      "strictRandom": "無放回隨機"
     },
     "health": {
       "title": "健康",

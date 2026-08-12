@@ -24,6 +24,10 @@ export enum GroupMode {
     Random = 2,
     Failover = 3,
     Weighted = 4,
+    HealthFirst = 5,
+    LeastUsed = 6,
+    P2C = 7,
+    StrictRandom = 8,
 }
 
 /**
