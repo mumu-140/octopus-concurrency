@@ -5,10 +5,14 @@ import "time"
 type GroupMode int
 
 const (
-	GroupModeRoundRobin GroupMode = 1 // 轮询：依次循环选择渠道
-	GroupModeRandom     GroupMode = 2 // 随机：每次随机选择一个渠道
-	GroupModeFailover   GroupMode = 3 // 故障转移：按优先级选择，失败时降级到下一个
-	GroupModeWeighted   GroupMode = 4 // 加权分配：按优权重分配流量
+	GroupModeRoundRobin   GroupMode = 1 // 轮询：依次循环选择渠道
+	GroupModeRandom       GroupMode = 2 // 随机：每次随机选择一个渠道
+	GroupModeFailover     GroupMode = 3 // 故障转移：按优先级选择，失败时降级到下一个
+	GroupModeWeighted     GroupMode = 4 // 加权分配：按优权重分配流量
+	GroupModeHealthFirst  GroupMode = 5 // 健康优先：按通道健康分档，健康同档内轮换（移植 omniroute auto 健康排序 + 同档轮换）
+	GroupModeLeastUsed    GroupMode = 6 // 最少使用：按在途并发升序，优先空闲通道（移植 omniroute least-used）
+	GroupModeP2C          GroupMode = 7 // 二选一：随机取两候选选并发较低者（移植 omniroute p2c）
+	GroupModeStrictRandom GroupMode = 8 // 无放回随机：按分组抽牌，连续请求不重复命中直到轮空再洗（移植 omniroute strict-random deck）
 )
 
 type Group struct {
