@@ -20,6 +20,7 @@ import (
 type StrictRandom struct{}
 
 type strictDeck struct {
+	mu    sync.Mutex // 保护 items/pos：同一 deck 可能被并发请求同时抽牌（多 goroutine 调用 Candidates）
 	items []model.GroupItem
 	pos   int // 下一个待发位置；到 len(items) 即轮空，下次重洗
 }
@@ -55,6 +56,9 @@ func (b *StrictRandom) Candidates(items []model.GroupItem) []model.GroupItem {
 	key := strictDeckKey(items)
 	v, _ := strictDecks.LoadOrStore(key, &strictDeck{})
 	deck := v.(*strictDeck)
+
+	deck.mu.Lock()
+	defer deck.mu.Unlock()
 
 	// 轮空或集合变化（长度不符/内容不符）→ 重新洗牌
 	needReshuffle := deck.pos >= len(deck.items) ||
