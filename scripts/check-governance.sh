@@ -4,6 +4,27 @@ set -euo pipefail
 readonly ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 readonly STATE_FILE="$ROOT_DIR/deploy/fwq57ys/production-state.json"
 
+# 公开仓库只含占位路径（/opt/octopus-*、203.0.113.10）。
+# 生产机通过 gitignored 的 deploy/fwq57ys/.deploy-local.env 注入真实部署路径，
+# 使 --live 门禁在真实环境仍可用；CI/公开环境无此文件时使用占位值。
+DEPLOY_LOCAL_ENV="$ROOT_DIR/deploy/fwq57ys/.deploy-local.env"
+if [ -f "$DEPLOY_LOCAL_ENV" ]; then
+    # shellcheck disable=SC1090
+    . "$DEPLOY_LOCAL_ENV"
+fi
+OCTOPUS_DEPLOY_ROOT="${OCTOPUS_DEPLOY_ROOT:-/opt/octopus}"
+OCTOPUS_SRC_DIR="${OCTOPUS_SRC_DIR:-/opt/octopus-mumu}"
+OCTOPUS_LAN_IP="${OCTOPUS_LAN_IP:-203.0.113.10}"
+
+# 把 state 中的占位路径还原为真实路径（生产机覆盖；公开环境原样返回）
+real_path() {
+    local p="$1"
+    p="${p//\/opt\/octopus-mumu/$OCTOPUS_SRC_DIR}"
+    p="${p//\/opt\/octopus/$OCTOPUS_DEPLOY_ROOT}"
+    printf '%s' "$p"
+}
+real_url() { printf '%s' "${1//203.0.113.10/$OCTOPUS_LAN_IP}"; }
+
 fail() {
     printf 'governance check failed: %s\n' "$1" >&2
     exit 1
@@ -73,7 +94,7 @@ check_manual_contracts() {
         "## 数据备份" "## 生产切换" "## 验证与回滚" \
         "## 已知事故与处理" "## 停止条件" "## 交付证据"
     require_document_text "$development" \
-        "/home/yangs/API/octopus-mumu/" "stats_leaderboard" \
+        "/opt/octopus-mumu/" "stats_leaderboard" \
         "item_reference" "web/pnpm-workspace.yaml" "UPDATE_PRICE_DATA=1" \
         "actual_model_name" "request_model_name"
     require_document_text "$production" \
@@ -233,7 +254,7 @@ check_live_container() {
         "$(jq -er '.[0].Config.Labels.commit' <<<"$image_inspect")" \
         "${source_commit:0:7}"
     jq -e \
-        --arg source "$(read_state '.production.container.dataMount.source')" \
+        --arg source "$(real_path "$(read_state '.production.container.dataMount.source')")" \
         --arg destination "$(read_state '.production.container.dataMount.destination')" \
         --argjson read_write "$(read_state '.production.container.dataMount.readWrite')" \
         '.[0].State.Running == true and (.[0].Mounts | any(.Source == $source and .Destination == $destination and .RW == $read_write))' \
@@ -250,9 +271,9 @@ check_live() {
 
     require_command docker
     require_command curl
-    canonical_path="$(read_state '.repository.canonicalPath')"
-    compose_replica="$(read_state '.production.composeReplica')"
-    rollback_snapshot="$(read_state '.production.rollbackSnapshot')"
+    canonical_path="$(real_path "$(read_state '.repository.canonicalPath')")"
+    compose_replica="$(real_path "$(read_state '.production.composeReplica')")"
+    rollback_snapshot="$(real_path "$(read_state '.production.rollbackSnapshot')")"
     [ "$ROOT_DIR" = "$canonical_path" ] \
         || fail "live check must run from canonical repository $canonical_path"
     cmp -s "$ROOT_DIR/$(read_state '.production.managedCompose')" "$compose_replica" \
@@ -262,7 +283,8 @@ check_live() {
     check_live_container
 
     while IFS= read -r url; do
-        code="$(curl --connect-timeout 5 --max-time 15 -fsS -o /dev/null -w '%{http_code}' "$url")"
+        url="$(real_url "$url")"
+    code="$(curl --connect-timeout 5 --max-time 15 -fsS -o /dev/null -w '%{http_code}' "$url")"
         [ "$code" = "200" ] || fail "$url returned HTTP $code"
     done < <(jq -er '.production.httpChecks[]' "$STATE_FILE")
     pass "live container, compose, mount and HTTP baseline"

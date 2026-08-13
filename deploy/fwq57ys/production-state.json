@@ -3,16 +3,16 @@
   "updatedAt": "2026-08-13T03:32:52Z",
   "repository": {
     "github": "mumu-140/octopus-concurrency",
-    "canonicalPath": "/home/yangs/API/octopus-mumu",
+    "canonicalPath": "/opt/octopus-mumu",
     "integrationBranch": "main",
     "minimumNormalizedCommit": "f7c587f602d84f88390a90b56e397078ae98f096"
   },
   "production": {
     "host": "fwq57ys",
-    "directory": "/home/yangs/API/octopus",
-    "dataDirectory": "/home/yangs/API/octopus/data",
+    "directory": "/opt/octopus",
+    "dataDirectory": "/opt/octopus/data",
     "managedCompose": "deploy/fwq57ys/compose.yaml",
-    "composeReplica": "/home/yangs/API/octopus/docker-compose.yml",
+    "composeReplica": "/opt/octopus/docker-compose.yml",
     "container": {
       "name": "octopus",
       "id": "c76ad77100fd85358eef8b539e33def1c63d4c15585589207a78ae12f8a0c0c9",
@@ -22,7 +22,7 @@
       "networkMode": "host",
       "restartCount": 0,
       "dataMount": {
-        "source": "/home/yangs/API/octopus/data",
+        "source": "/opt/octopus/data",
         "destination": "/app/data",
         "readWrite": true
       }
@@ -34,14 +34,14 @@
     },
     "httpChecks": [
       "http://127.0.0.1:35276/",
-      "http://222.28.118.57:35276/"
+      "http://203.0.113.10:35276/"
     ],
-    "rollbackSnapshot": "/home/yangs/API/octopus/backups/pre-v0.10.2-mumu.19-cutover-20260813T030000Z"
+    "rollbackSnapshot": "/opt/octopus/backups/pre-v0.10.2-mumu.19-cutover-20260813T030000Z"
   },
   "preservedDirectories": [
-    "/home/yangs/API/octopus-src",
-    "/home/yangs/API/octopus-src.failed-clone-20260713",
-    "/home/yangs/API/octopus-build-cache"
+    "/opt/octopus-src",
+    "/opt/octopus-src.failed-clone-20260713",
+    "/opt/octopus-build-cache"
   ],
   "quarantinedBranches": [
     {

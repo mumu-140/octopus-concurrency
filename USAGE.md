@@ -109,7 +109,7 @@ machine state file. Never substitute `hureru/octopus`, `bestruirui/octopus`, `la
 the repository's historical root Compose.
 
 For local evaluation, start the current source as described in [README.md](README.md) with disposable local
-data. Never mount, clear, or copy `/home/yangs/API/octopus/data` for development.
+data. Never mount, clear, or copy `/opt/octopus/data` for development.
 
 ### 4.2 First Login
 

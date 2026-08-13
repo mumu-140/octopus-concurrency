@@ -1,8 +1,8 @@
 # Omniroute 分组路由策略报告（21128 服务本体）
 
-- **调研对象**：`http://222.28.118.57:21128` 上独立运行的 **omniroute v16.2.12**（Node 聚合网关），非 octopus 渠道里的引用。
-- **源码位置**：`/home/yangs/.nvm/versions/node/v22.23.1/lib/node_modules/omniroute/`（`@omniroute/open-sse` 为仓库内包，`./open-sse/`）。
-- **台账库**：`/home/yangs/.omniroute/storage.sqlite`（只读，combos 表）。
+- **调研对象**：`http://203.0.113.10:21128` 上独立运行的 **omniroute v16.2.12**（Node 聚合网关），非 octopus 渠道里的引用。
+- **源码位置**：`~/.nvm/versions/node/v22.23.1/lib/node_modules/omniroute/`（`@omniroute/open-sse` 为仓库内包，`./open-sse/`）。
+- **台账库**：`~/.omniroute/storage.sqlite`（只读，combos 表）。
 - **采集时间**：2026-08-12。
 - **性质**：只读调研报告，供「哪些策略值得移植到 octopus」决策。**未做任何写入。**
 

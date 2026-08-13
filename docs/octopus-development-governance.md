@@ -40,11 +40,11 @@ inspect 证据为准。以下四项必须分别记录，不得相互推导：
 `.19` 回滚快照。生产容器、生产 SQLite 均未删除。
 
 | --- | --- | --- | --- |
-| 唯一源码 | `/home/yangs/API/octopus-mumu/` | 开发、测试、构建、提交 | 不在第二份源码中继续工作 |
-| 生产控制面 | `/home/yangs/API/octopus/` | Compose 副本、真实数据、备份、部署证据 | 不初始化 Git、不放源码、不构建 |
-| 生产数据 | `/home/yangs/API/octopus/data/` | 仅获批的生产读写 | 不用于开发、单测或候选 |
-| 历史源码 | `/home/yangs/API/octopus-src*` | 只读追溯 | 不恢复旧改动、不构建、不部署 |
-| 构建缓存 | `/home/yangs/API/octopus-build-cache/` | 只作缓存 | 不视为源码或发布证据 |
+| 唯一源码 | `/opt/octopus-mumu/` | 开发、测试、构建、提交 | 不在第二份源码中继续工作 |
+| 生产控制面 | `/opt/octopus/` | Compose 副本、真实数据、备份、部署证据 | 不初始化 Git、不放源码、不构建 |
+| 生产数据 | `/opt/octopus/data/` | 仅获批的生产读写 | 不用于开发、单测或候选 |
+| 历史源码 | `/opt/octopus-src*` | 只读追溯 | 不恢复旧改动、不构建、不部署 |
+| 构建缓存 | `/opt/octopus-build-cache/` | 只作缓存 | 不视为源码或发布证据 |
 | 生产声明 | `deploy/fwq57ys/compose.yaml` | 版本控制的目标 Compose | 不直接挂候选数据 |
 | 发布目标与运行指纹 | `deploy/fwq57ys/production-state.json` | staging 记录目标 release/image，切换后记录 live 指纹 | 不把 staging 状态声称为已运行 |
 
@@ -95,7 +95,7 @@ Release tag 指向应用源码 commit，不指向后续部署 staging commit。�
 ### 开始
 
 ```bash
-cd /home/yangs/API/octopus-mumu
+cd /opt/octopus-mumu
 scripts/check-governance.sh --repo
 git status --short --branch
 git fetch origin
@@ -211,7 +211,7 @@ UI 或协议改动不能只以“编译通过”验收；统计或迁移不能�
 
 ```text
 任务与范围：
-源码目录：/home/yangs/API/octopus-mumu
+源码目录：/opt/octopus-mumu
 分支 / HEAD / origin SHA：
 当前 main / 运行应用源码：
 运行镜像 tag / image ID / 容器 ID：

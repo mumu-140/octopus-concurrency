@@ -1,0 +1,25 @@
+{
+  "feature": "request-compression",
+  "planDir": ".helloagents/plans/202608080122_request-compression",
+  "qaMode": "standard",
+  "qaFocus": [
+    "压缩保真：Lite 保尾（npm summary 不丢）、Headroom round-trip、Output styles 幂等",
+    "fail-open：引擎 panic/error 时原始请求字节级直通",
+    "关闭路径零开销：master 或分组配置关闭时 benchmark <1μs",
+    "分组隔离：nil 配置分组零行为变化"
+  ],
+  "decisions": {
+    "form": "in-process config-gated module (internal/relay/compress)",
+    "engines_phase1": ["lite-keeptail", "headroom", "output-styles"],
+    "engines_deferred": ["rtk", "session-dedup"],
+    "engines_rejected": ["caveman"],
+    "switch_granularity": "per-group JSON column + global master SettingKey",
+    "rollout": "direct enable, unit-test gated, single-group canary"
+  },
+  "verification": {
+    "unit": "go test ./internal/relay/compress/...",
+    "bench": "go test ./internal/relay/compress/... -bench .",
+    "repo": "go build ./... && go test ./... && scripts/check-governance.sh --repo",
+    "deploy": "docs/octopus-production.md 后台切换 + 回滚容器待命"
+  }
+}

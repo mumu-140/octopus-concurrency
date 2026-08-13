@@ -12,11 +12,11 @@
 | 对象 | 规范位置/名称 | 职责 | 使用边界 |
 | --- | --- | --- | --- |
 | GitHub | `mumu-140/octopus-concurrency` | 远端源码、CI、Release、GHCR | 不移动公开 tag，不重写 `main` |
-| 规范源码 | `/home/yangs/API/octopus-mumu/` | 唯一开发、测试、构建、提交入口 | 不放真实数据，不直接承担生产运行 |
+| 规范源码 | `/opt/octopus-mumu/` | 唯一开发、测试、构建、提交入口 | 不放真实数据，不直接承担生产运行 |
 | 受管 Compose | `deploy/fwq57ys/compose.yaml` | 生产目标声明 | 只声明精确镜像、host 网络和正式挂载 |
 | 发布目标与运行状态 | `deploy/fwq57ys/production-state.json` | staging 目标 release/image + 切换后 live 指纹 | 必须标明阶段，不把 staging 声称为已运行 |
-| 生产控制面 | `/home/yangs/API/octopus/` | Compose 副本、真实数据、备份、部署日志 | 不是源码仓库，不构建 |
-| 生产数据 | `/home/yangs/API/octopus/data/` | `config.json`、SQLite 和运行数据 | 只挂生产容器；候选不得使用 |
+| 生产控制面 | `/opt/octopus/` | Compose 副本、真实数据、备份、部署日志 | 不是源码仓库，不构建 |
+| 生产数据 | `/opt/octopus/data/` | `config.json`、SQLite 和运行数据 | 只挂生产容器；候选不得使用 |
 | 生产容器 | `octopus` | 对外正式服务 | 不兼任候选或回滚容器 |
 | 回滚容器 | 状态清单声明的精确名称 | 保留上一验证版本的可启动容器 | 不常态运行，不改名冒充候选 |
 | 候选容器 | `octopus-candidate-<version>` 或任务声明的唯一名 | 独立端口、独立数据副本验收 | 不占 35276，不挂生产数据，不自动晋级 |
@@ -30,7 +30,7 @@
 每次 Octopus 任务先执行以下只读步骤：
 
 ```bash
-cd /home/yangs/API/octopus-mumu
+cd /opt/octopus-mumu
 git status --short --branch
 git rev-parse HEAD origin/main
 jq '.repository, .production' deploy/fwq57ys/production-state.json
@@ -45,7 +45,7 @@ scripts/check-governance.sh --live
 - 运行镜像 tag 和 image ID；
 - 生产容器 ID、启动时间和 restart count；
 - Compose 副本与受管 Compose 是否逐字一致；
-- host 网络、`/home/yangs/API/octopus/data:/app/data` 挂载和 HTTP 状态；
+- host 网络、`/opt/octopus/data:/app/data` 挂载和 HTTP 状态；
 - 状态清单声明的回滚容器/快照是否真实存在。
 
 目录名、最新 commit、镜像名或容器名中的任意一个都不能单独证明生产身份。只读核验失败时
@@ -80,10 +80,10 @@ scripts/check-governance.sh --live
 | 启动时间 / restart count | `2026-08-13T03:16:42.754369701Z` / `0` |
 | 网络与监听 | `host` / `0.0.0.0:35276` |
 | 公网入口 | `https://octopus.muaiword.com`（Cloudflare Tunnel → caddy-gateway `127.0.0.1:27057` → `35276`；常态关闭，用时经 fwq57ys `~/software/cloudflared/cf-octopus on|off` 开关） |
-| 数据挂载 | `/home/yangs/API/octopus/data:/app/data` |
-| Compose 副本 | `/home/yangs/API/octopus/docker-compose.yml` |
+| 数据挂载 | `/opt/octopus/data:/app/data` |
+| Compose 副本 | `/opt/octopus/docker-compose.yml` |
 | 回滚容器 | `octopus-mumu17-rollback-20260813T030000Z`（已创建未启动，.17 镜像待命，唯一正式回滚容器） |
-| 回滚快照 | `/home/yangs/API/octopus/backups/pre-v0.10.2-mumu.19-cutover-20260813T030000Z/`（唯一保留的回滚快照） |
+| 回滚快照 | `/opt/octopus/backups/pre-v0.10.2-mumu.19-cutover-20260813T030000Z/`（唯一保留的回滚快照） |
 | 切换后台任务 | `v0.10.2-mumu.19-cutover-20260813T030000Z`，状态 `COMPLETE` |
 
 本次切换后，候选容器 `octopus-candidate-19` 及其候选数据副本（`octopus-candidate-18`、
@@ -147,7 +147,7 @@ GHCR 是发布分发源。包为私有时，拉取凭据必须具备 `read:packa
 
 - 容器名不得为 `octopus`，不得复用回滚容器名；
 - 不得监听 `35276`；
-- 任一 Mount.Source 都不得等于 `/home/yangs/API/octopus/data`；
+- 任一 Mount.Source 都不得等于 `/opt/octopus/data`；
 - 数据副本、日志和状态目录使用本次任务唯一名称；
 - 禁止修改生产 Compose 副本、生产状态清单或生产容器。
 
@@ -224,7 +224,7 @@ Release 成功不等于部署授权。只有明确维护窗口、候选全部通
 7. 任一步失败触发 trap：移除失败容器、恢复旧 Compose/声明、重命名并启动回滚容器；
 8. 回滚后再次验证 HTTP、旧镜像身份、`quick_check` 和 `--live`；
 9. 全部通过后才按 live inspect 更新 `production-state.json`，保存证据并写 `COMPLETE`；
-10. 日志、PID、阶段和最终状态保存在 `/home/yangs/API/octopus/deployments/<run-id>/`。
+10. 日志、PID、阶段和最终状态保存在 `/opt/octopus/deployments/<run-id>/`。
 
 后台任务必须通过 `nohup` 或等价的脱离会话机制启动，stdin 关闭，stdout/stderr 写入部署日志；
 启动后用新的只读 SSH/API 连接观察状态。禁止在承载 Codex/Claude/Hermes 当前通信的前台 SSH
@@ -245,8 +245,8 @@ Release 成功不等于部署授权。只有明确维护窗口、候选全部通
 9. 回滚容器和快照真实存在，候选与临时资源已精确清理。
 
 回滚也属于生产生命周期操作，只能由独立后台任务执行。当前状态清单声明的唯一正式回滚点为
-`.17` 容器 `octopus-mumu17-rollback-20260813T030000Z` 和 `.19` 切换快照（`/home/yangs/API/
-octopus/backups/pre-v0.10.2-mumu.19-cutover-20260813T030000Z/`）。历史回滚容器 `.12`、`.13`
+`.17` 容器 `octopus-mumu17-rollback-20260813T030000Z` 和 `.19` 切换快照（`/opt/octopus/
+backups/pre-v0.10.2-mumu.19-cutover-20260813T030000Z/`）。历史回滚容器 `.12`、`.13`
 及旧版快照已清理，不再支持回滚。不得复制旧文档中的前台 Docker 命令。vps76 的历史小型数据
 副本和已停止的 `hureru/octopus:latest` 不是热备或受支持的回滚版本。
 

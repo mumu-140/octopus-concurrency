@@ -109,7 +109,7 @@ Octopus 是一个 **LLM API 聚合与负载均衡服务**。简单说，它帮�
 根 Compose。
 
 本地体验按 [README_zh.md](README_zh.md) 从当前源码启动，并使用可丢弃的本地数据。不得为开发
-挂载、清空或复制 `/home/yangs/API/octopus/data`。
+挂载、清空或复制 `/opt/octopus/data`。
 
 ### 4.2 首次登录
 

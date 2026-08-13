@@ -17,3 +17,4 @@ static/out.before-*/
 .tmp/
 CONTEXT.md
 .impeccable.md
+deploy/fwq57ys/.deploy-local.env
