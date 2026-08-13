@@ -79,6 +79,7 @@ scripts/check-governance.sh --live
 | 容器 | `octopus` / `c76ad77100fd85358eef8b539e33def1c63d4c15585589207a78ae12f8a0c0c9` |
 | 启动时间 / restart count | `2026-08-13T03:16:42.754369701Z` / `0` |
 | 网络与监听 | `host` / `0.0.0.0:35276` |
+| 公网入口 | `https://octopus.muaiword.com`（Cloudflare Tunnel → caddy-gateway `127.0.0.1:27057` → `35276`；常态关闭，用时经 fwq57ys `~/software/cloudflared/cf-octopus on|off` 开关） |
 | 数据挂载 | `/home/yangs/API/octopus/data:/app/data` |
 | Compose 副本 | `/home/yangs/API/octopus/docker-compose.yml` |
 | 回滚容器 | `octopus-mumu17-rollback-20260813T030000Z`（已创建未启动，.17 镜像待命，唯一正式回滚容器） |

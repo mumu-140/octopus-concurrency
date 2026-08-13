@@ -160,6 +160,10 @@ UI 或协议改动不能只以“编译通过”验收；统计或迁移不能�
 `UPDATE_PRICE_DATA=1` 才执行并必须先审查生成差异；后者需要生产快照、数据范围和审计，
 不得通过直接写 SQLite 顺带完成。
 
+已应用的定价变更（台账不再重复记录，以本节为准）：
+
+- `2026-07-26`：`claude-opus-5` 零价 → Anthropic 官方 $5/$25（同 Opus 4.8）；`杂` 按 `deepseek-chat` $0.28/$0.42；`codex-auto-review` 与 `sensenova-6.7` 保持零价。
+
 ## 明确禁止
 
 - 禁止在 `main`、生产控制面、历史源码或 build-cache 中开发。
