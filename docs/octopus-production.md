@@ -81,13 +81,15 @@ scripts/check-governance.sh --live
 | 网络与监听 | `host` / `0.0.0.0:35276` |
 | 数据挂载 | `/home/yangs/API/octopus/data:/app/data` |
 | Compose 副本 | `/home/yangs/API/octopus/docker-compose.yml` |
-| 回滚容器 | `octopus-mumu17-rollback-20260813T030000Z`（已创建未启动，.17 镜像待命）；`octopus-mumu13-rollback-20260810T011706Z` 保留 |
-| 回滚快照 | `/home/yangs/API/octopus/backups/pre-v0.10.2-mumu.19-cutover-20260813T030000Z/` |
+| 回滚容器 | `octopus-mumu17-rollback-20260813T030000Z`（已创建未启动，.17 镜像待命，唯一正式回滚容器） |
+| 回滚快照 | `/home/yangs/API/octopus/backups/pre-v0.10.2-mumu.19-cutover-20260813T030000Z/`（唯一保留的回滚快照） |
 | 切换后台任务 | `v0.10.2-mumu.19-cutover-20260813T030000Z`，状态 `COMPLETE` |
 
 本次切换后，候选容器 `octopus-candidate-19` 及其候选数据副本（`octopus-candidate-18`、
-`octopus-candidate-19`、`octopus-candidate-ci19`）已精确停止并删除。生产容器、生产 SQLite、
-正式回滚容器和回滚快照均未删除。
+`octopus-candidate-19`、`octopus-candidate-ci19`）已精确停止并删除。随后收整：历史回滚容器
+`.12`、`.13` 以及历史版本/事故快照（`.11`、`.12`、`.13`、`.17`、`pre-relay-content-null`、
+`pre-stale-container-cleanup`）已删除，仅保留 `.17` 正式回滚容器和最新的 `.19` 回滚快照。
+生产容器、生产 SQLite 均未删除。
 
 `.11` 从 `.9` 行为基线重新实现模型、最终渠道和请求分组三维小时统计；`.10` 的
 `stats_dimension*` 实现和 tag 已废弃。生产三维必须逐项对账成功、失败、输入/输出 Token
@@ -241,11 +243,11 @@ Release 成功不等于部署授权。只有明确维护窗口、候选全部通
 8. 状态清单变更已提交，主线 CI 对该运行状态提交成功；
 9. 回滚容器和快照真实存在，候选与临时资源已精确清理。
 
-回滚也属于生产生命周期操作，只能由独立后台任务执行。当前状态清单声明的正式回滚点为
-`.17` 容器 `octopus-mumu17-rollback-20260813T030000Z` 和 `.19` 切换快照；同时保留
-`.13` 历史回滚容器 `octopus-mumu13-rollback-20260810T011706Z`。不得复制旧文档中的前台
-Docker 命令。vps76 的历史小型数据副本和已停止的 `hureru/octopus:latest` 不是热备或受支持
-回滚版本。
+回滚也属于生产生命周期操作，只能由独立后台任务执行。当前状态清单声明的唯一正式回滚点为
+`.17` 容器 `octopus-mumu17-rollback-20260813T030000Z` 和 `.19` 切换快照（`/home/yangs/API/
+octopus/backups/pre-v0.10.2-mumu.19-cutover-20260813T030000Z/`）。历史回滚容器 `.12`、`.13`
+及旧版快照已清理，不再支持回滚。不得复制旧文档中的前台 Docker 命令。vps76 的历史小型数据
+副本和已停止的 `hureru/octopus:latest` 不是热备或受支持的回滚版本。
 
 ## 已知事故与处理
 

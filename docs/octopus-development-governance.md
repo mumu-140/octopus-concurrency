@@ -34,7 +34,10 @@ inspect 证据为准。以下四项必须分别记录，不得相互推导：
 
 本次切换后台任务 `v0.10.2-mumu.19-cutover-20260813T030000Z` 已完成；候选容器
 `octopus-candidate-19` 及其候选数据副本（`octopus-candidate-18`、`octopus-candidate-19`、
-`octopus-candidate-ci19`）已按授权精确清理。生产数据、正式回滚容器和回滚快照未删除。
+`octopus-candidate-ci19`）已按授权精确清理。随后按授权收整：历史回滚容器 `.12`、`.13`
+已删除，仅保留 `.17` 正式回滚容器作为安全网；历史版本与事故快照（`.11`、`.12`、`.13`、
+`.17`、`pre-relay-content-null`、`pre-stale-container-cleanup`）已清理，仅保留一份最新的
+`.19` 回滚快照。生产容器、生产 SQLite 均未删除。
 
 | --- | --- | --- | --- |
 | 唯一源码 | `/home/yangs/API/octopus-mumu/` | 开发、测试、构建、提交 | 不在第二份源码中继续工作 |
