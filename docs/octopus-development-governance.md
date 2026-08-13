@@ -26,16 +26,15 @@ inspect 证据为准。以下四项必须分别记录，不得相互推导：
 ## 当前生产台账
 
 `deploy/fwq57ys/production-state.json` 是当前生产运行指纹的唯一机器可读台账。最近一次已核验的
-生产版本为 `v0.10.2-mumu.17`：应用源码提交为
-`5447e843f6cb54f07809d3bb1cdf4908c050b912`，生产状态提交为
-`0c47358651f44f9a121d16aeaca4af128423dcb9`，运行镜像 ID 为
-`sha256:5c2a02f32bedcc8647d8cce490a9812066abd41eb69c487fe7cb25b89f3a34f9`，容器 ID 为
-`b64dc3dd9dc30966b6ac2238ce7069b0d04ce04d697f0d33793798e82d248a08`。
+生产版本为 `v0.10.2-mumu.19`：应用源码提交为
+`947e5e477c8b66d9f677783d475bc3f3fb5dd642`，生产状态提交为
+`7effc8a0ced6ca3b35640ce896bbbfd4b71c1ee2`，运行镜像 ID 为
+`sha256:31787cf29681bd2e884f567f8318af7c6c26d25701e5cf18f82516b1c4141810`，容器 ID 为
+`c76ad77100fd85358eef8b539e33def1c63d4c15585589207a78ae12f8a0c0c9`。
 
-本次切换后台任务 `v0.10.2-mumu.17-cutover-20260810T011706Z` 已完成；`.16`、`.17` 候选容器、
-候选数据副本以及历史测试副本 `/home/yangs/working/octopus-candidate-14` 和
-`/home/yangs/API/octopus/concurrency-test-data` 已按授权精确清理。生产数据、正式回滚容器和
-回滚快照未删除。
+本次切换后台任务 `v0.10.2-mumu.19-cutover-20260813T030000Z` 已完成；候选容器
+`octopus-candidate-19` 及其候选数据副本（`octopus-candidate-18`、`octopus-candidate-19`、
+`octopus-candidate-ci19`）已按授权精确清理。生产数据、正式回滚容器和回滚快照未删除。
 
 | --- | --- | --- | --- |
 | 唯一源码 | `/home/yangs/API/octopus-mumu/` | 开发、测试、构建、提交 | 不在第二份源码中继续工作 |

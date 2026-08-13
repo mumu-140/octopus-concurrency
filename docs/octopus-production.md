@@ -71,23 +71,23 @@ scripts/check-governance.sh --live
 
 | 项目 | 值 |
 | --- | --- |
-| 运行版本 | `v0.10.2-mumu.17` |
-| 应用源码 | `5447e843f6cb54f07809d3bb1cdf4908c050b912` |
-| 当前运行状态记录提交 | `0c47358651f44f9a121d16aeaca4af128423dcb9` |
-| 生产镜像 | `mumu-140/octopus-concurrency:v0.10.2-mumu.17` |
-| 镜像 ID | `sha256:5c2a02f32bedcc8647d8cce490a9812066abd41eb69c487fe7cb25b89f3a34f9` |
-| 容器 | `octopus` / `b64dc3dd9dc30966b6ac2238ce7069b0d04ce04d697f0d33793798e82d248a08` |
-| 启动时间 / restart count | `2026-08-10T01:20:51.017141173Z` / `0` |
+| 运行版本 | `v0.10.2-mumu.19` |
+| 应用源码 | `947e5e477c8b66d9f677783d475bc3f3fb5dd642` |
+| 当前运行状态记录提交 | `7effc8a0ced6ca3b35640ce896bbbfd4b71c1ee2` |
+| 生产镜像 | `mumu-140/octopus-concurrency:v0.10.2-mumu.19` |
+| 镜像 ID | `sha256:31787cf29681bd2e884f567f8318af7c6c26d25701e5cf18f82516b1c4141810` |
+| 容器 | `octopus` / `c76ad77100fd85358eef8b539e33def1c63d4c15585589207a78ae12f8a0c0c9` |
+| 启动时间 / restart count | `2026-08-13T03:16:42.754369701Z` / `0` |
 | 网络与监听 | `host` / `0.0.0.0:35276` |
 | 数据挂载 | `/home/yangs/API/octopus/data:/app/data` |
 | Compose 副本 | `/home/yangs/API/octopus/docker-compose.yml` |
-| 回滚容器 | `octopus-mumu13-rollback-20260810T011706Z`（已创建未启动，.13 镜像待命）；`octopus-mumu12-rollback-20260808T052441Z` 保留 |
-| 回滚快照 | `/home/yangs/API/octopus/backups/pre-v0.10.2-mumu.17-cutover-20260809T235305Z/` |
-| 切换后台任务 | `v0.10.2-mumu.17-cutover-20260810T011706Z`，状态 `COMPLETE` |
+| 回滚容器 | `octopus-mumu17-rollback-20260813T030000Z`（已创建未启动，.17 镜像待命）；`octopus-mumu13-rollback-20260810T011706Z` 保留 |
+| 回滚快照 | `/home/yangs/API/octopus/backups/pre-v0.10.2-mumu.19-cutover-20260813T030000Z/` |
+| 切换后台任务 | `v0.10.2-mumu.19-cutover-20260813T030000Z`，状态 `COMPLETE` |
 
-本次切换后，`.16`、`.17` 候选容器及其候选数据副本已精确停止并删除；另清理了历史测试副本
-`/home/yangs/working/octopus-candidate-14` 和 `/home/yangs/API/octopus/concurrency-test-data`。
-生产容器、生产 SQLite、正式回滚容器和回滚快照均未删除。
+本次切换后，候选容器 `octopus-candidate-19` 及其候选数据副本（`octopus-candidate-18`、
+`octopus-candidate-19`、`octopus-candidate-ci19`）已精确停止并删除。生产容器、生产 SQLite、
+正式回滚容器和回滚快照均未删除。
 
 `.11` 从 `.9` 行为基线重新实现模型、最终渠道和请求分组三维小时统计；`.10` 的
 `stats_dimension*` 实现和 tag 已废弃。生产三维必须逐项对账成功、失败、输入/输出 Token
@@ -242,8 +242,8 @@ Release 成功不等于部署授权。只有明确维护窗口、候选全部通
 9. 回滚容器和快照真实存在，候选与临时资源已精确清理。
 
 回滚也属于生产生命周期操作，只能由独立后台任务执行。当前状态清单声明的正式回滚点为
-`.13` 容器 `octopus-mumu13-rollback-20260810T011706Z` 和 `.17` 切换快照；同时保留
-`.12` 历史回滚容器 `octopus-mumu12-rollback-20260808T052441Z`。不得复制旧文档中的前台
+`.17` 容器 `octopus-mumu17-rollback-20260813T030000Z` 和 `.19` 切换快照；同时保留
+`.13` 历史回滚容器 `octopus-mumu13-rollback-20260810T011706Z`。不得复制旧文档中的前台
 Docker 命令。vps76 的历史小型数据副本和已停止的 `hureru/octopus:latest` 不是热备或受支持
 回滚版本。
 
