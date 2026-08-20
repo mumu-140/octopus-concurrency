@@ -485,14 +485,14 @@ export function GroupEditor({
 
                     {/* Mode + Retry Toggle */}
                     <div className="flex items-center gap-2">
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1 flex-1 min-w-0">
+                        <div className="grid grid-cols-4 gap-1 flex-1 min-w-0">
                             {([GroupMode.RoundRobin, GroupMode.Random, GroupMode.Failover, GroupMode.Weighted, GroupMode.HealthFirst, GroupMode.LeastUsed, GroupMode.P2C, GroupMode.StrictRandom] as const).map((m) => (
                                 <button
                                     key={m}
                                     type="button"
                                     onClick={() => setMode(m)}
                                     className={cn(
-                                        'min-w-0 px-2 py-1.5 text-xs leading-tight whitespace-normal rounded-lg transition-colors',
+                                        'min-w-0 px-1.5 py-1.5 text-xs leading-tight whitespace-nowrap rounded-lg transition-colors',
                                         mode === m ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80'
                                     )}
                                 >
