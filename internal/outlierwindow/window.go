@@ -1,9 +1,10 @@
-// Package outlierwindow 维护按渠道（channelID）的进程内滚动成败窗口，
-// 为被动离群退役（POR）的「门1：滚动窗口聚合」提供证据。
+// Package outlierwindow 维护按「渠道-模型」（channelID + modelName）的进程内滚动成败窗口，
+// 为被动离群退役（POR）的「门1：滚动窗口聚合」与选路健康度提供证据。
 //
 // 设计要点：
 //   - 数据面（relay）在每次真实请求最终结果点调用 Report，纳秒级、非阻塞。
-//   - 控制面（task）周期调用 Evaluate 获取窗口统计 + 门1初判。
+//   - 控制面（task）周期调用 EvaluateChannel 获取「渠道聚合」窗口统计 + 门1初判；
+//     选路侧（balancer）调用 Evaluate 获取单个渠道-模型的窗口统计。
 //   - 纯内存、重启清空（与熔断器 internal/relay/balancer/circuit.go 同构）；
 //     退役状态的持久化由 model.SiteChannelOutlierState 负责，不在本包。
 //   - 本包零依赖 op，阈值由 task 侧通过 Configure 注入，避免循环依赖。
@@ -52,8 +53,16 @@ var defaultConfig = Config{
 	ConsecFails: 10,
 }
 
+// windowKey 是窗口的唯一键：渠道-模型二元组。
+// 与熔断器 internal/relay/balancer/circuit.go 的 channel:key:model 三元粒度对齐到
+// 渠道-模型这一层（不含 keyID：密钥级失败由熔断器负责，窗口只描述「渠道能否服务该模型」）。
+type windowKey struct {
+	ChannelID int
+	Model     string
+}
+
 var (
-	store     sync.Map // key: int(channelID) -> *ringWindow
+	store     sync.Map // windowKey -> *ringWindow
 	configPtr atomic.Pointer[Config]
 )
 
@@ -92,25 +101,56 @@ func Configure(c Config) {
 // PhysicalCap 返回环形缓冲的物理容量，供调用方校验 Capacity 上限。
 func PhysicalCap() int { return physicalCap }
 
-func getOrCreate(channelID int) *ringWindow {
-	if v, ok := store.Load(channelID); ok {
+func getOrCreate(k windowKey) *ringWindow {
+	if v, ok := store.Load(k); ok {
 		return v.(*ringWindow)
 	}
 	w := &ringWindow{}
-	actual, _ := store.LoadOrStore(channelID, w)
+	actual, _ := store.LoadOrStore(k, w)
 	return actual.(*ringWindow)
 }
 
 // Report 数据面每次真实请求最终结果调用。非阻塞、best-effort，内部 recover 兜底绝不冒泡。
 // statusCode 当前不参与门1判定（门1只看成败序列），保留入参供未来扩展。
-func Report(channelID int, success bool, statusCode int, now time.Time) {
+func Report(channelID int, modelName string, success bool, statusCode int, now time.Time) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Warnf("outlierwindow report panic: %v", r)
 		}
 	}()
 	_ = statusCode
-	w := getOrCreate(channelID)
+	record(getOrCreate(windowKey{ChannelID: channelID, Model: modelName}), success, now)
+}
+
+// ReportChannel 把一次「整渠道级」失败/成功写入该渠道当前所有已知模型子窗口。
+// 用于渠道作用域错误（配额耗尽、令牌失效、连接被重置等，与具体模型无关）。
+// 本次请求的 (channelID, modelName) 无条件写入（它是这次失败的直接当事者，
+// 可能还没有子窗口），其余同渠道子窗口再铺开一遍，同一个键不重复计数。
+// 不新增「渠道级独立键」，保持存储只有一种键形态。
+func ReportChannel(channelID int, modelName string, success bool, statusCode int, now time.Time) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Warnf("outlierwindow report panic: %v", r)
+		}
+	}()
+	_ = statusCode
+	self := windowKey{ChannelID: channelID, Model: modelName}
+	record(getOrCreate(self), success, now)
+	store.Range(func(key, value any) bool {
+		k, ok := key.(windowKey)
+		if !ok || k.ChannelID != channelID || k == self {
+			return true
+		}
+		w, ok := value.(*ringWindow)
+		if !ok {
+			return true
+		}
+		record(w, success, now)
+		return true
+	})
+}
+
+func record(w *ringWindow, success bool, now time.Time) {
 	w.mu.Lock()
 	w.buf[w.next] = sample{at: now, success: success}
 	w.next = (w.next + 1) % physicalCap
@@ -132,13 +172,68 @@ type WindowStats struct {
 	Candidate        bool      // 门1判定：true=应进门2
 }
 
-// Evaluate 控制面调用：返回窗口统计 + 门1判定。惰性过期裁剪，不清窗。
-func Evaluate(channelID int, now time.Time) WindowStats {
-	v, ok := store.Load(channelID)
+// Evaluate 选路侧调用：返回单个渠道-模型的窗口统计 + 门1判定。惰性过期裁剪，不清窗。
+func Evaluate(channelID int, modelName string, now time.Time) WindowStats {
+	v, ok := store.Load(windowKey{ChannelID: channelID, Model: modelName})
 	if !ok {
 		return WindowStats{}
 	}
 	return v.(*ringWindow).evaluate(now, currentConfig())
+}
+
+// EvaluateChannel 控制面（POR 门1）调用：把该渠道下全部模型子窗口聚合成渠道视角统计。
+// 聚合规则：Samples/Failures 求和；FailureRate 按聚合值重算；
+// ConsecutiveFails 取各子窗口最大值（不求和——不同模型的连续失败不构成同一条失败序列）；
+// LastSuccessAt / LastSampleAt 取最大值。随后用聚合值重跑门1三档判定。
+func EvaluateChannel(channelID int, now time.Time) WindowStats {
+	c := currentConfig()
+	var st WindowStats
+	found := false
+	store.Range(func(key, value any) bool {
+		k, ok := key.(windowKey)
+		if !ok || k.ChannelID != channelID {
+			return true
+		}
+		w, ok := value.(*ringWindow)
+		if !ok {
+			return true
+		}
+		sub := w.evaluate(now, c)
+		if sub.Samples == 0 {
+			return true
+		}
+		found = true
+		st.Samples += sub.Samples
+		st.Failures += sub.Failures
+		if sub.ConsecutiveFails > st.ConsecutiveFails {
+			st.ConsecutiveFails = sub.ConsecutiveFails
+		}
+		if sub.LastSuccessAt.After(st.LastSuccessAt) {
+			st.LastSuccessAt = sub.LastSuccessAt
+		}
+		if sub.LastSampleAt.After(st.LastSampleAt) {
+			st.LastSampleAt = sub.LastSampleAt
+		}
+		return true
+	})
+	if !found || st.Samples == 0 {
+		return WindowStats{}
+	}
+	st.FailureRate = float64(st.Failures) / float64(st.Samples)
+	st.Candidate = gate1(st, c)
+	return st
+}
+
+// gate1 门1三档判定：样本不足 PASS；失败率未达阈值 PASS；
+// 否则 连续失败达标 或 窗口内无任何成功 → Candidate。
+func gate1(st WindowStats, c Config) bool {
+	if st.Samples < c.MinSamples {
+		return false
+	}
+	if st.FailureRate < c.FailRate {
+		return false
+	}
+	return st.ConsecutiveFails >= c.ConsecFails || st.LastSuccessAt.IsZero()
 }
 
 // orderedLocked 按时间从旧到新返回有效样本（调用方需持锁）。
@@ -194,22 +289,23 @@ func (w *ringWindow) evaluate(now time.Time, c Config) WindowStats {
 		st.ConsecutiveFails++
 	}
 
-	// 门1 三档判定
-	if st.Samples < c.MinSamples { // 档1：样本不足 → PASS
-		return st
-	}
-	if st.FailureRate < c.FailRate { // 档2：被成功稀释 → PASS
-		return st
-	}
-	// 档3：失败率达标 + (连续失败达标 或 窗口内无任何成功)
-	noSuccess := st.LastSuccessAt.IsZero()
-	st.Candidate = st.ConsecutiveFails >= c.ConsecFails || noSuccess
+	st.Candidate = gate1(st, c)
 	return st
 }
 
-// Clear 清空指定渠道窗口（探活成功/恢复后调用，重新积累证据）。
-func Clear(channelID int) {
-	store.Delete(channelID)
+// Clear 清空指定渠道-模型窗口（该模型探活成功/恢复后调用，重新积累证据）。
+func Clear(channelID int, modelName string) {
+	store.Delete(windowKey{ChannelID: channelID, Model: modelName})
+}
+
+// ClearChannel 清空指定渠道下全部模型子窗口（渠道探活成功/退役恢复后调用）。
+func ClearChannel(channelID int) {
+	store.Range(func(key, _ any) bool {
+		if k, ok := key.(windowKey); ok && k.ChannelID == channelID {
+			store.Delete(k)
+		}
+		return true
+	})
 }
 
 // Reap 回收 lastSeen 早于 now-ttl 的窗口（已删除/长期无流量渠道），返回回收数。

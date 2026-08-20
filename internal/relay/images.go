@@ -208,8 +208,8 @@ func ImagesHandler(endpoint string, c *gin.Context) {
 				}
 
 				if fwdErr == nil {
-					// 成功：记录渠道成功样本
-					outlierwindow.Report(channel.ID, true, statusCode, time.Now())
+					// 成功：记录渠道-模型成功样本
+					outlierwindow.Report(channel.ID, item.ModelName, true, statusCode, time.Now())
 					metrics.ActualModel = item.ModelName
 					if usage != nil {
 						metrics.SetUsageFromImages(item.ModelName, *usage)
@@ -235,8 +235,9 @@ func ImagesHandler(endpoint string, c *gin.Context) {
 					RequestFailed: 1,
 				})
 
-				// 截断/已写出：不污染健康统计，直接结束
+				// 已写出：无法再重试，但上游故障是真实信号，仍按作用域计入健康统计
 				if written {
+					reportOutlierFailure(channel.ID, item.ModelName, statusCode, outlierErrorText(fwdErr, ""), time.Now())
 					metrics.SaveWithChannelStats(ctx, false, fwdErr, iter.Attempts(), false)
 					return true
 				}
@@ -254,9 +255,9 @@ func ImagesHandler(endpoint string, c *gin.Context) {
 				break
 			}
 
-			// 渠道所有 Key 均失败：记录一次渠道失败样本
+			// 渠道所有 Key 均失败：按错误作用域记录失败样本
 			if channelLastErr != nil {
-				outlierwindow.Report(channel.ID, false, channelLastStatus, time.Now())
+				reportOutlierFailure(channel.ID, item.ModelName, channelLastStatus, outlierErrorText(channelLastErr, ""), time.Now())
 				lastErr = channelLastErr
 			}
 			return false

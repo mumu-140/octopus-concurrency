@@ -149,6 +149,39 @@ func IsTripped(channelID, keyID int, modelName string) (tripped bool, remaining 
 	}
 }
 
+// PeekItemTripped 只读探测某个渠道-模型是否有任一 Key 处于熔断中。
+// 与 IsTripped 的区别：绝不做状态迁移（IsTripped 会把冷却到期的 Open 转 HalfOpen、
+// 把探测超时的 HalfOpen 转回 Open，并对 HalfOpen 返回 true 以拒绝并发探测），
+// 因此只适合排序阶段读取熔断信号，不能替代请求路径上的准入判断。
+// keyID 未知，按 "channelID:" 前缀 + ":modelName" 后缀匹配该渠道-模型的全部 Key。
+func PeekItemTripped(channelID int, modelName string) bool {
+	prefix := fmt.Sprintf("%d:", channelID)
+	suffix := ":" + modelName
+	tripped := false
+	globalBreaker.Range(func(key, v any) bool {
+		k, ok := key.(string)
+		if !ok || !strings.HasPrefix(k, prefix) || !strings.HasSuffix(k, suffix) {
+			return true
+		}
+		entry, ok := v.(*circuitEntry)
+		if !ok {
+			return true
+		}
+		entry.mu.Lock()
+		state := entry.State
+		lastFailure := entry.LastFailureTime
+		tripCount := entry.TripCount
+		entry.mu.Unlock()
+
+		if state == StateOpen && time.Since(lastFailure) < GetCooldown(tripCount) {
+			tripped = true
+			return false
+		}
+		return true
+	})
+	return tripped
+}
+
 // RecordSuccess 记录成功，重置熔断器状态
 func RecordSuccess(channelID, keyID int, modelName string) {
 	key := circuitKey(channelID, keyID, modelName)

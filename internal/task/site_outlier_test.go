@@ -106,13 +106,13 @@ func createProjectedChannel(t *testing.T, ctx context.Context, siteID, accountID
 	if err := dbpkg.GetDB().WithContext(ctx).Create(&binding).Error; err != nil {
 		t.Fatalf("create binding for %s failed: %v", name, err)
 	}
-	outlierwindow.Clear(ch.ID)
+	outlierwindow.ClearChannel(ch.ID)
 	return ch.ID
 }
 
 func reportN(channelID int, success bool, n int, base time.Time) {
 	for i := 0; i < n; i++ {
-		outlierwindow.Report(channelID, success, 0, base.Add(time.Duration(i)*time.Second))
+		outlierwindow.Report(channelID, "m-test", success, 0, base.Add(time.Duration(i)*time.Second))
 	}
 }
 
@@ -196,7 +196,7 @@ func TestRunOutlierRetire_SiteOutageProbeSuccessSkips(t *testing.T) {
 		if _, err := op.SiteChannelOutlierGet(id, ctx); err == nil {
 			t.Errorf("channel %d should not have a retired record", id)
 		}
-		if got := outlierwindow.Evaluate(id, now).Samples; got != 0 {
+		if got := outlierwindow.EvaluateChannel(id, now).Samples; got != 0 {
 			t.Errorf("channel %d window expected cleared, got %d samples", id, got)
 		}
 	}

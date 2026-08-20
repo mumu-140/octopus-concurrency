@@ -10,6 +10,7 @@ import (
 
 	dbmodel "github.com/bestruirui/octopus/internal/model"
 	"github.com/bestruirui/octopus/internal/op"
+	"github.com/bestruirui/octopus/internal/outlierwindow"
 	"github.com/bestruirui/octopus/internal/relay/balancer"
 	"github.com/bestruirui/octopus/internal/transformer/inbound"
 	transformerModel "github.com/bestruirui/octopus/internal/transformer/model"
@@ -579,6 +580,12 @@ func runWSRelay(ctx context.Context, req *relayRequest, group *dbmodel.Group) ws
 			}
 		}
 
+		// 与 handleAttemptResult 同口径：健康度覆盖 Written/ResetConversation（上游流中断、
+		// 要求重建会话都是上游故障证据），只排除 Canceled（客户端主动断开）。
+		if !result.Success && !result.Canceled {
+			reportOutlierFailure(channel.ID, item.ModelName, result.StatusCode,
+				outlierErrorText(result.Err, result.UpstreamErrorBody), time.Now())
+		}
 		if !result.Success && !result.Written && !result.Canceled && !result.ResetConversation {
 			failureKind := circuitFailureKind(group.RetryEnabled, result.StatusCode)
 			if replayExact && result.StatusCode == http.StatusServiceUnavailable && isNoAvailableAccountError(relayErrorMessage(result.Err)) {
@@ -588,6 +595,7 @@ func runWSRelay(ctx context.Context, req *relayRequest, group *dbmodel.Group) ws
 		}
 
 		if result.Success {
+			outlierwindow.Report(channel.ID, item.ModelName, true, result.StatusCode, time.Now())
 			var respID string
 			if req.metrics.InternalResponse != nil {
 				respID = req.metrics.InternalResponse.ID

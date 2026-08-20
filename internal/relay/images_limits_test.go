@@ -134,7 +134,7 @@ func TestImagesHandlerFailsOverToNextKeyWithinChannel(t *testing.T) {
 		MaxRetries:   2,
 	}
 	created := persistImagesRoute(t, ctx, group, channel)[0]
-	outlierwindow.Clear(created.ID)
+	outlierwindow.Clear(created.ID, "gpt-image-2")
 
 	recorder, c := newImagesTestContext(
 		"/v1/images/generations",
@@ -154,7 +154,7 @@ func TestImagesHandlerFailsOverToNextKeyWithinChannel(t *testing.T) {
 	if fmt.Sprint(gotAuths) != fmt.Sprint(wantAuths) {
 		t.Fatalf("authorization sequence = %v, want %v", gotAuths, wantAuths)
 	}
-	stats := outlierwindow.Evaluate(created.ID, time.Now())
+	stats := outlierwindow.Evaluate(created.ID, "gpt-image-2", time.Now())
 	if stats.Samples != 1 || stats.Failures != 0 {
 		t.Fatalf("outlier stats = %+v, want one successful sample", stats)
 	}
@@ -236,7 +236,7 @@ func TestImagesHandlerClientCancellationDoesNotPolluteHealth(t *testing.T) {
 	}
 	created := persistImagesRoute(t, ctx, group, channel)[0]
 	keyID := created.Keys[0].ID
-	outlierwindow.Clear(created.ID)
+	outlierwindow.Clear(created.ID, "gpt-image-2")
 	if err := op.SettingSetInt(model.SettingKeyCircuitBreakerThreshold, 1); err != nil {
 		t.Fatalf("SettingSetInt threshold failed: %v", err)
 	}
@@ -273,7 +273,7 @@ func TestImagesHandlerClientCancellationDoesNotPolluteHealth(t *testing.T) {
 	if tripped, _ := balancer.IsTripped(created.ID, keyID, "gpt-image-2"); tripped {
 		t.Fatal("client cancellation tripped circuit breaker")
 	}
-	if stats := outlierwindow.Evaluate(created.ID, time.Now()); stats.Samples != 0 {
+	if stats := outlierwindow.Evaluate(created.ID, "gpt-image-2", time.Now()); stats.Samples != 0 {
 		t.Fatalf("client cancellation added outlier sample: %+v", stats)
 	}
 	if recorder.Body.Len() != 0 {
@@ -281,7 +281,9 @@ func TestImagesHandlerClientCancellationDoesNotPolluteHealth(t *testing.T) {
 	}
 }
 
-func TestImagesHandlerTruncatedSSEDoesNotPolluteHealth(t *testing.T) {
+// 截断 SSE：上游已开始写出但流中断，是上游故障的强信号，必须计入渠道-模型健康窗口；
+// 但因已写出无法重试，不应触发熔断。
+func TestImagesHandlerTruncatedSSECountsAsUnhealthy(t *testing.T) {
 	ginTestMode(t)
 	ctx := setupRelayTestDB(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -295,7 +297,7 @@ func TestImagesHandlerTruncatedSSEDoesNotPolluteHealth(t *testing.T) {
 	group := &model.Group{Name: "public-image-truncated", Mode: model.GroupModeFailover}
 	created := persistImagesRoute(t, ctx, group, channel)[0]
 	keyID := created.Keys[0].ID
-	outlierwindow.Clear(created.ID)
+	outlierwindow.Clear(created.ID, "gpt-image-2")
 	if err := op.SettingSetInt(model.SettingKeyCircuitBreakerThreshold, 1); err != nil {
 		t.Fatalf("SettingSetInt threshold failed: %v", err)
 	}
@@ -317,8 +319,9 @@ func TestImagesHandlerTruncatedSSEDoesNotPolluteHealth(t *testing.T) {
 	if tripped, _ := balancer.IsTripped(created.ID, keyID, "gpt-image-2"); tripped {
 		t.Fatal("truncated SSE tripped circuit breaker")
 	}
-	if stats := outlierwindow.Evaluate(created.ID, time.Now()); stats.Samples != 0 {
-		t.Fatalf("truncated SSE added outlier sample: %+v", stats)
+	stats := outlierwindow.Evaluate(created.ID, "gpt-image-2", time.Now())
+	if stats.Samples != 1 || stats.Failures != 1 {
+		t.Fatalf("truncated SSE outlier stats = %+v, want one failure sample", stats)
 	}
 }
 

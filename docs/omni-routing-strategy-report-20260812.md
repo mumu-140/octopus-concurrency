@@ -326,3 +326,10 @@ taskType 默认时 → classifyPromptIntent(最后一条 user 消息)
 
 **前端**：picker 加 4 选项（`Card.tsx` 快切 + `Editor.tsx` 编辑），i18n 三语（en/zh_hans/zh_hant）补 `mode.healthFirst/leastUsed/p2c/strictRandom`。
 
+---
+
+## 10. 移植后复审发现的缺陷（后续设计另见专文）
+
+§9 移植上线后复审 8 个策略，发现 5 个真实缺陷：RoundRobin 全局单计数器且与 HealthFirst 同档轮换共用、Failover 无健康感知、Weighted 权重公式数学错误、健康度仅 channel 粒度且大量真实错误漏判、HealthFirst 注释声称熔断感知但代码未实现。
+
+健康度计算公式与取值范围、档位边界依据、错误作用域三分类、8 策略写入/读取矩阵、渠道-模型键升级与 POR 聚合兼容方案，见 `docs/octopus-channel-model-health-design.md`。

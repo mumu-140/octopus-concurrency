@@ -27,18 +27,20 @@ type strictDeck struct {
 
 var strictDecks sync.Map // key: fingerprint string -> *strictDeck
 
-// strictDeckKey 基于 items 集合生成稳定指纹（与顺序无关）。
-func strictDeckKey(items []model.GroupItem) string {
-	ids := make([]int, 0, len(items))
+// itemSetKey 基于 items 集合生成稳定指纹（与顺序无关）。
+// 指纹按「渠道ID + 模型名」构成：同一渠道下不同模型属于不同候选集合，
+// 否则同渠道多模型的分组会共用一个 deck / 轮换游标，互相推进对方的位置。
+func itemSetKey(items []model.GroupItem) string {
+	ids := make([]string, 0, len(items))
 	for _, it := range items {
-		ids = append(ids, it.ChannelID)
+		ids = append(ids, strconv.Itoa(it.ChannelID)+"/"+it.ModelName)
 	}
-	sort.Ints(ids)
+	sort.Strings(ids)
 	var b strings.Builder
-	b.Grow(len(ids) * 8)
+	b.Grow(len(ids) * 24)
 	for _, id := range ids {
-		b.WriteString(strconv.Itoa(id))
-		b.WriteByte(':')
+		b.WriteString(id)
+		b.WriteByte(';')
 	}
 	return b.String()
 }
@@ -53,7 +55,7 @@ func (b *StrictRandom) Candidates(items []model.GroupItem) []model.GroupItem {
 		out[0] = items[0]
 		return out
 	}
-	key := strictDeckKey(items)
+	key := itemSetKey(items)
 	v, _ := strictDecks.LoadOrStore(key, &strictDeck{})
 	deck := v.(*strictDeck)
 
@@ -87,12 +89,16 @@ func sameItemSet(a, b []model.GroupItem) bool {
 	if len(a) != len(b) {
 		return false
 	}
-	sa := make(map[int]struct{}, len(a))
+	type itemRef struct {
+		ChannelID int
+		Model     string
+	}
+	sa := make(map[itemRef]struct{}, len(a))
 	for _, it := range a {
-		sa[it.ChannelID] = struct{}{}
+		sa[itemRef{it.ChannelID, it.ModelName}] = struct{}{}
 	}
 	for _, it := range b {
-		if _, ok := sa[it.ChannelID]; !ok {
+		if _, ok := sa[itemRef{it.ChannelID, it.ModelName}]; !ok {
 			return false
 		}
 	}

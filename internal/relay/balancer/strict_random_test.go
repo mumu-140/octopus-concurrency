@@ -57,7 +57,19 @@ func TestStrictRandomFingerprintStable(t *testing.T) {
 		mkItem(2, 1, 502),
 		mkItem(1, 1, 501),
 	}
-	if strictDeckKey(itemsA) != strictDeckKey(itemsB) {
+	if itemSetKey(itemsA) != itemSetKey(itemsB) {
 		t.Fatal("fingerprint should be order-independent")
+	}
+	// 同渠道不同模型必须是不同指纹（否则共用 deck / 轮换游标）
+	sameChannelDiffModel := []model.GroupItem{
+		{ID: 1, Priority: 1, ChannelID: 501, ModelName: "m"},
+		{ID: 2, Priority: 1, ChannelID: 501, ModelName: "n"},
+	}
+	sameChannelSameModel := []model.GroupItem{
+		{ID: 1, Priority: 1, ChannelID: 501, ModelName: "m"},
+		{ID: 2, Priority: 1, ChannelID: 501, ModelName: "m"},
+	}
+	if itemSetKey(sameChannelDiffModel) == itemSetKey(sameChannelSameModel) {
+		t.Fatal("fingerprint must distinguish models on the same channel")
 	}
 }

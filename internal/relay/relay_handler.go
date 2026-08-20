@@ -200,17 +200,25 @@ func (h *relayHandler) acquireCandidate(channel *dbmodel.Channel, key dbmodel.Ch
 }
 
 func (h *relayHandler) handleAttemptResult(channel *dbmodel.Channel, key dbmodel.ChannelKey, plan *protocolroute.AttemptPlan, result attemptResult) bool {
+	// 健康度上报与熔断上报的口径不同：
+	//   - 熔断只处理「可继续 failover」的失败（Written/ResetConversation 已终止本次请求）；
+	//   - 健康度必须覆盖 Written 与 ResetConversation：上游流中断、要求重建会话都是上游故障证据，
+	//     漏掉它们会让持续吐流失败的渠道-模型永远显示健康。
+	//   - Canceled 是客户端主动断开，与上游健康无关，继续排除。
+	if !result.Success && !result.Canceled {
+		reportOutlierFailure(channel.ID, plan.UpstreamModel(), result.StatusCode,
+			outlierErrorText(result.Err, result.UpstreamErrorBody), time.Now())
+	}
 	if !result.Success && !result.Written && !result.Canceled && !result.ResetConversation {
 		failureKind := circuitFailureKind(h.group.RetryEnabled, result.StatusCode)
 		balancer.RecordFailure(channel.ID, key.ID, plan.UpstreamModel(), failureKind)
-		outlierwindow.Report(channel.ID, false, result.StatusCode, time.Now())
 		if failureKind == balancer.FailureHard {
 			maybeLearnManagedRoute(h.c.Request.Context(), channel.ID, plan.UpstreamModel(), h.inboundType, result.Err)
 		}
 	}
 	switch classifyAttemptResult(result) {
 	case attemptActionSuccess:
-		return h.handleSuccessfulAttempt(channel, key, result)
+		return h.handleSuccessfulAttempt(channel, key, plan, result)
 	case attemptActionCanceled:
 		h.metrics.SaveWithChannelStats(h.c.Request.Context(), false, result.Err, h.iterator.Attempts(), false)
 		return true
@@ -257,8 +265,8 @@ func classifyAttemptResult(result attemptResult) attemptAction {
 	return attemptActionContinue
 }
 
-func (h *relayHandler) handleSuccessfulAttempt(channel *dbmodel.Channel, key dbmodel.ChannelKey, result attemptResult) bool {
-	outlierwindow.Report(channel.ID, true, result.StatusCode, time.Now())
+func (h *relayHandler) handleSuccessfulAttempt(channel *dbmodel.Channel, key dbmodel.ChannelKey, plan *protocolroute.AttemptPlan, result attemptResult) bool {
+	outlierwindow.Report(channel.ID, plan.UpstreamModel(), true, result.StatusCode, time.Now())
 	saveHTTPReplayState(httpReplaySaveInput{
 		ctx: h.c.Request.Context(), inboundType: h.inboundType, request: h.request.internalRequest,
 		inAdapter: h.request.inAdapter, metrics: h.metrics, previousState: h.replayState,

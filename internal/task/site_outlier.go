@@ -76,7 +76,7 @@ func runOutlierRetire(ctx context.Context, prober channelProber, cfg outlierConf
 		if err != nil || !ch.Enabled {
 			continue
 		}
-		st := outlierwindow.Evaluate(b.ChannelID, now)
+		st := outlierwindow.EvaluateChannel(b.ChannelID, now)
 		if st.Candidate {
 			candidates = append(candidates, candidate{channelID: b.ChannelID, stats: st})
 		}
@@ -145,7 +145,7 @@ func recoverRetired(ctx context.Context, prober channelProber, cfg outlierConfig
 				continue
 			}
 			_ = op.SiteChannelOutlierClear(st.ChannelID, ctx)
-			outlierwindow.Clear(st.ChannelID)
+			outlierwindow.ClearChannel(st.ChannelID)
 			log.Infof("POR recovered channel=%d (%s)", ch.ID, ch.Name)
 		}
 	}
@@ -166,7 +166,7 @@ func retireViaProbe(ctx context.Context, prober channelProber, channelID, siteAc
 	res := prober.RunCandidate(ctx, *ch, usedKey, modelName)
 	if res.Success {
 		// 门3 探活成功 → 之前的窗口失败可能是瞬时事件，清窗放行
-		outlierwindow.Clear(channelID)
+		outlierwindow.ClearChannel(channelID)
 		return
 	}
 
@@ -223,7 +223,7 @@ func handleSiteOutage(ctx context.Context, prober channelProber, accountID int, 
 		probed = true
 		if probe.Success {
 			for _, sib := range siblings {
-				outlierwindow.Clear(sib)
+				outlierwindow.ClearChannel(sib)
 			}
 			log.Infof("POR site outage probe ok account=%d, skip disable", accountID)
 			return
@@ -253,7 +253,7 @@ func handleSiteOutage(ctx context.Context, prober channelProber, accountID int, 
 		if err != nil || !ch.Enabled {
 			continue
 		}
-		chStats := outlierwindow.Evaluate(chID, now)
+		chStats := outlierwindow.EvaluateChannel(chID, now)
 		snap := model.OutlierSnapshot{
 			Samples:          chStats.Samples,
 			Failures:         chStats.Failures,
@@ -291,7 +291,7 @@ func countHealthySiblings(ctx context.Context, siblings []int, self int, now tim
 			continue
 		}
 		total++
-		if !outlierwindow.Evaluate(sib, now).Candidate {
+		if !outlierwindow.EvaluateChannel(sib, now).Candidate {
 			healthy++
 		}
 	}

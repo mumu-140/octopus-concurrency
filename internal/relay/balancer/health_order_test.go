@@ -12,13 +12,13 @@ func mkItem(id, priority int, channelID int) model.GroupItem {
 	return model.GroupItem{ID: id, Priority: priority, ChannelID: channelID, ModelName: "m"}
 }
 
-// channelsForHealth 标记一批通道为健康（多次成功）或差（多次失败）。
+// seedHealth 标记某个渠道-模型为健康（多次成功）或差（多次失败）。
 func seedHealth(channelID int, successes, failures int, now time.Time) {
 	for i := 0; i < successes; i++ {
-		outlierwindow.Report(channelID, true, 200, now)
+		outlierwindow.Report(channelID, "m", true, 200, now)
 	}
 	for i := 0; i < failures; i++ {
-		outlierwindow.Report(channelID, false, 500, now)
+		outlierwindow.Report(channelID, "m", false, 500, now)
 	}
 }
 

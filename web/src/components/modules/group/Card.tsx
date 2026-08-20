@@ -322,7 +322,7 @@ export function GroupCard({ group }: { group: Group }) {
             </header>
 
             {/* Mode: quick switch (no need to enter Edit) */}
-            <div className="flex gap-1 mb-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1 mb-3">
                 {([GroupMode.RoundRobin, GroupMode.Random, GroupMode.Failover, GroupMode.Weighted, GroupMode.HealthFirst, GroupMode.LeastUsed, GroupMode.P2C, GroupMode.StrictRandom] as const).map((m) => (
                     <button
                         key={m}
@@ -334,7 +334,7 @@ export function GroupCard({ group }: { group: Group }) {
                             updateGroup.mutate({ id: group.id!, mode: m }, { onSuccess, onError });
                         }}
                         className={cn(
-                            'flex-1 py-1 text-xs rounded-lg transition-colors',
+                            'min-w-0 px-2 py-1.5 text-xs leading-tight whitespace-normal rounded-lg transition-colors',
                             group.mode === m ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80',
                             // Keep visuals stable (no opacity/disabled flicker) while still preventing double-submit via onClick guard.
                             (!group.id) && 'cursor-not-allowed opacity-50'

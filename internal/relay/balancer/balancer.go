@@ -1,6 +1,7 @@
 package balancer
 
 import (
+	"math"
 	"math/rand"
 	"sort"
 	"sync"
@@ -11,7 +12,20 @@ import (
 	"github.com/bestruirui/octopus/internal/outlierwindow"
 )
 
-var roundRobinCounter uint64
+// rotationCounters 轮换计数器，按「用途 + 候选集合指纹」分桶。
+// 原实现是单个全局计数器，被 RoundRobin 与 HealthFirst 同档轮换共用：
+// 不同分组、不同模型、不同策略互相推进对方的游标，轮询退化为伪随机。
+var rotationCounters sync.Map // key: string -> *uint64
+
+// nextRotation 返回指定桶自增后的计数值。
+func nextRotation(bucket string) uint64 {
+	if v, ok := rotationCounters.Load(bucket); ok {
+		return atomic.AddUint64(v.(*uint64), 1)
+	}
+	var c uint64
+	actual, _ := rotationCounters.LoadOrStore(bucket, &c)
+	return atomic.AddUint64(actual.(*uint64), 1)
+}
 
 // Balancer 根据负载均衡模式选择通道
 type Balancer interface {
@@ -44,7 +58,8 @@ func GetBalancer(mode model.GroupMode) Balancer {
 	}
 }
 
-// RoundRobin 轮询：从上次位置开始轮转排列
+// RoundRobin 轮询：从上次位置开始轮转排列。
+// 计数器按候选集合指纹分桶，保证同一分组内严格轮转，且不被其他分组串扰。
 type RoundRobin struct{}
 
 func (b *RoundRobin) Candidates(items []model.GroupItem) []model.GroupItem {
@@ -52,7 +67,7 @@ func (b *RoundRobin) Candidates(items []model.GroupItem) []model.GroupItem {
 	if n == 0 {
 		return nil
 	}
-	idx := int(atomic.AddUint64(&roundRobinCounter, 1) % uint64(n))
+	idx := int(nextRotation("rr:"+itemSetKey(items)) % uint64(n))
 	result := make([]model.GroupItem, n)
 	for i := 0; i < n; i++ {
 		result[i] = items[(idx+i)%n]
@@ -76,17 +91,54 @@ func (b *Random) Candidates(items []model.GroupItem) []model.GroupItem {
 	return result
 }
 
-// Failover 故障转移：按优先级排序
+// Failover 故障转移：Priority 升序 → 未熔断优先 → 健康分降序。
+// 原实现只按 Priority 排序，最高优先级的渠道-模型即使连续失败也永远排第一，
+// 每次请求都要先撞一次坏上游才会降级；加入熔断与健康度作为同优先级内的次级键后，
+// 同一 Priority 内坏项自动后移，Priority 的语义（优先级高的先用）不变。
 type Failover struct{}
 
 func (b *Failover) Candidates(items []model.GroupItem) []model.GroupItem {
-	if len(items) == 0 {
+	n := len(items)
+	if n == 0 {
 		return nil
 	}
-	return sortByPriority(items)
+	now := time.Now()
+	type foEntry struct {
+		item    model.GroupItem
+		score   float64
+		tripped bool
+	}
+	es := make([]foEntry, n)
+	for i, item := range items {
+		es[i] = foEntry{
+			item:    item,
+			score:   itemHealthScore(item.ChannelID, item.ModelName, now),
+			tripped: PeekItemTripped(item.ChannelID, item.ModelName),
+		}
+	}
+	sort.SliceStable(es, func(i, j int) bool {
+		if es[i].item.Priority != es[j].item.Priority {
+			return es[i].item.Priority < es[j].item.Priority
+		}
+		if es[i].tripped != es[j].tripped {
+			return !es[i].tripped
+		}
+		return es[i].score > es[j].score
+	})
+	result := make([]model.GroupItem, n)
+	for i := range es {
+		result[i] = es[i].item
+	}
+	return result
 }
 
-// Weighted 加权分配：按权重概率排序
+// Weighted 加权分配：按权重生成无放回抽样顺序。
+//
+// 原实现用 score = rand.Float64() * w/totalWeight 降序排列，首位命中概率并不等于
+// w/totalWeight：两个权重 10 与 1 的候选，理论首位比应为 10:1（0.909），
+// 旧公式实测约 0.95，权重被系统性放大。
+// 现改用指数赛跑（等价于 A-Res 加权无放回抽样）：key = -ln(U)/w，升序取最小。
+// 该式下 P(item i 排首位) = w_i / Σw 严格成立，且整个排列即一次加权无放回抽样。
 type Weighted struct{}
 
 func (b *Weighted) Candidates(items []model.GroupItem) []model.GroupItem {
@@ -95,19 +147,9 @@ func (b *Weighted) Candidates(items []model.GroupItem) []model.GroupItem {
 		return nil
 	}
 
-	// 构建加权随机排序
 	type weightedItem struct {
-		item  model.GroupItem
-		score float64
-	}
-
-	totalWeight := 0
-	for _, item := range items {
-		w := item.Weight
-		if w <= 0 {
-			w = 1
-		}
-		totalWeight += w
+		item model.GroupItem
+		key  float64
 	}
 
 	scored := make([]weightedItem, n)
@@ -116,16 +158,16 @@ func (b *Weighted) Candidates(items []model.GroupItem) []model.GroupItem {
 		if w <= 0 {
 			w = 1
 		}
-		// 给每个 item 一个加权随机分数：weight/totalWeight 作为概率基础，加上随机扰动
+		// 1-rand.Float64() 落在 (0,1]，避免 rand.Float64() 取到 0 时 -ln(0)=+Inf
 		scored[i] = weightedItem{
-			item:  item,
-			score: rand.Float64() * float64(w) / float64(totalWeight),
+			item: item,
+			key:  -math.Log(1-rand.Float64()) / float64(w),
 		}
 	}
 
-	// 按分数降序排列（分数越高优先级越高）
+	// key 越小越优先（权重越大，期望 key 越小）
 	sort.Slice(scored, func(i, j int) bool {
-		return scored[i].score > scored[j].score
+		return scored[i].key < scored[j].key
 	})
 
 	result := make([]model.GroupItem, n)
@@ -214,11 +256,13 @@ func (b *P2C) Candidates(items []model.GroupItem) []model.GroupItem {
 	return result
 }
 
-// channelHealthScore 通道健康分（0 最差 ~ 1 最好），基于 outlierwindow 滚动成败窗口。
+// itemHealthScore 渠道-模型健康分（0 最差 ~ 1 最好），基于 outlierwindow 滚动成败窗口。
+// 粒度必须是渠道-模型：一个渠道通常挂很多模型，单个模型不可用（model_not_found、
+// 上下文超限、限流）不能把整渠道判成不健康。
 // 移植自 omniroute scoring.ts 的 health/cost/quota 因子在「无 p95/cost/quota 数据」时的 A 类退化：
 // 仅用进程内已有的成败窗口。冷启动（样本不足）给中性分 0.5，避免新通道被冤枉。
-func channelHealthScore(channelID int, now time.Time) float64 {
-	st := outlierwindow.Evaluate(channelID, now)
+func itemHealthScore(channelID int, modelName string, now time.Time) float64 {
+	st := outlierwindow.Evaluate(channelID, modelName, now)
 	if st.Samples == 0 {
 		return 0.5 // 冷启动：无证据，中性
 	}
@@ -246,18 +290,9 @@ func channelHealthScore(channelID int, now time.Time) float64 {
 
 const minHealthSamples = 8 // 与 outlierwindow defaultConfig.MinSamples 对齐
 
-func sortByPriority(items []model.GroupItem) []model.GroupItem {
-	sorted := make([]model.GroupItem, len(items))
-	copy(sorted, items)
-	sort.Slice(sorted, func(i, j int) bool {
-		return sorted[i].Priority < sorted[j].Priority
-	})
-	return sorted
-}
-
 // Reset clears in-memory balancer state for tests.
 func Reset() {
-	roundRobinCounter = 0
+	rotationCounters = sync.Map{}
 	globalBreaker = sync.Map{}
 	globalSession = sync.Map{}
 	globalConcurrency = sync.Map{}
