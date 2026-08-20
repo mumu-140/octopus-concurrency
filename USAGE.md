@@ -284,7 +284,7 @@ Go to the **Groups** page and click the button at top-left to **Create Group**. 
 | **First Token Timeout** | In seconds, only applies to streaming responses. 0 = no limit |
 | **Session Affinity** | In seconds, keep using the same channel during a session. **0 = disabled** |
 | **Same Channel Retry** + **Max Retries** | See below |
-| **Load Balancing Mode** | Round Robin / Random / Failover / Weighted |
+| **Load Balancing Mode** | Round Robin / Random / Failover / Weighted / Health First / Least Used / P2C / Strict Random |
 | **Selected Models** | Which "channel + model" combinations this group aggregates |
 
 **Load Balancing Modes**:
@@ -295,6 +295,10 @@ Go to the **Groups** page and click the button at top-left to **Create Group**. 
 | 🎲 Random | Randomly picks an available channel each time |
 | 🛡️ Failover | Prefers high-priority channels, falls back to lower priority only on failure |
 | ⚖️ Weighted | Distributes requests based on channel weight ratios |
+| ❤️ Health First | Tiers channels by health; rotates within the same healthy tier, stable order across tiers |
+| 📉 Least Used | Sorts by in-flight concurrency ascending, favoring idle channels; ties broken by priority |
+| 🎯 P2C | Picks two random candidates and selects the one with lower in-flight concurrency |
+| 🃏 Strict Random | Draws without replacement per group: no repeat hit until the whole deck is exhausted, then reshuffles |
 
 ### 7.2 How to Add Models to a Group
 

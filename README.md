@@ -245,6 +245,10 @@ Groups aggregate multiple channels into a unified external model name.
 | 🎲 **Random** | Randomly selects an available channel for each request |
 | 🛡️ **Failover** | Prioritizes high-priority channels, switches to lower priority only on failure |
 | ⚖️ **Weighted** | Distributes requests based on configured channel weights |
+| ❤️ **Health First** | Tiers channels by health; rotates within the same healthy tier, stable order across tiers |
+| 📉 **Least Used** | Sorts by in-flight concurrency ascending, favoring idle channels; ties broken by priority |
+| 🎯 **P2C** | Picks two random candidates and selects the one with lower in-flight concurrency |
+| 🃏 **Strict Random** | Draws without replacement per group: no repeat hit until the whole deck is exhausted, then reshuffles |
 
 > 💡 **Example**: Create a group named `gpt-4o`, add multiple providers' GPT-4o channels to it, then access all channels via a unified `model: gpt-4o`.
 
