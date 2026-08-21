@@ -72,25 +72,24 @@ scripts/check-governance.sh --live
 | 项目 | 值 |
 | --- | --- |
 | 运行版本 | `v0.10.2-mumu.20` |
-| 应用源码 | `947e5e477c8b66d9f677783d475bc3f3fb5dd642` |
-| 当前运行状态记录提交 | `7effc8a0ced6ca3b35640ce896bbbfd4b71c1ee2` |
+| 应用源码 | `c57759b724dd2b8c8d1e2d0792044c75e73c4231` |
+| 当前运行状态记录提交 | `befb5d152bd30d78bffa7774201649eac6a469d1` |
 | 生产镜像 | `mumu-140/octopus-concurrency:v0.10.2-mumu.20` |
-| 镜像 ID | `sha256:31787cf29681bd2e884f567f8318af7c6c26d25701e5cf18f82516b1c4141810` |
-| 容器 | `octopus` / `c76ad77100fd85358eef8b539e33def1c63d4c15585589207a78ae12f8a0c0c9` |
-| 启动时间 / restart count | `2026-08-13T03:16:42.754369701Z` / `0` |
+| 镜像 ID | `sha256:90d6eabb365887ad8bc7b9a6797257dece0394f051dbb04b0e765de555db1500c` |
+| 容器 | `octopus` / `0fc848e151dd6404bd7e0b54759d33e2d0e5d6b1358978d082dcf84648d2974d` |
+| 启动时间 / restart count | `2026-08-20T20:04:54.681034098Z` / `0` |
 | 网络与监听 | `host` / `0.0.0.0:35276` |
 | 公网入口 | `https://octopus.muaiword.com`（Cloudflare Tunnel → caddy-gateway `127.0.0.1:27057` → `35276`；常态关闭，用时经 fwq57ys `~/software/cloudflared/cf-octopus on|off` 开关） |
 | 数据挂载 | `/opt/octopus/data:/app/data` |
 | Compose 副本 | `/opt/octopus/docker-compose.yml` |
-| 回滚容器 | `octopus-mumu19-rollback-20260820T192318Z`（已创建未启动，.19 镜像待命，唯一正式回滚容器） |
+| 回滚容器 | 无（`.19` 回滚容器已清理，`.19` 镜像 `31787cf29681` 作为本地回滚镜像待命） |
 | 回滚快照 | `/opt/octopus/backups/pre-v0.10.2-mumu.20-cutover-20260820T192318Z/`（唯一保留的回滚快照） |
 | 切换后台任务 | `v0.10.2-mumu.20-cutover-20260820T192318Z`，状态 `COMPLETE` |
 
-本次切换后，候选容器 `octopus-candidate-19` 及其候选数据副本（`octopus-candidate-18`、
-`octopus-candidate-19`、`octopus-candidate-ci19`）已精确停止并删除。随后收整：历史回滚容器
-`.12`、`.13` 以及历史版本/事故快照（`.11`、`.12`、`.13`、`.17`、`pre-relay-content-null`、
-`pre-stale-container-cleanup`）已删除，仅保留 `.19` 正式回滚容器和最新的 `.20` 回滚快照。
-生产容器、生产 SQLite 均未删除。
+本次切换后台任务 `v0.10.2-mumu.20-cutover-20260820T192318Z` 已完成；候选容器
+`octopus-test-20`（端口 35277、空 DB）功能验证通过（HTTP 200、API 路由 401、日志无错误）。
+切回 .20 容器后旧 `.19` 镜像作为回滚安全网保留；历史回滚容器 `.12`、`.13`、`.17`
+已清理，仅保留最新的 `.20` 回滚快照。生产容器、生产 SQLite 均未删除。
 
 `.11` 从 `.9` 行为基线重新实现模型、最终渠道和请求分组三维小时统计；`.10` 的
 `stats_dimension*` 实现和 tag 已废弃。生产三维必须逐项对账成功、失败、输入/输出 Token
@@ -244,11 +243,11 @@ Release 成功不等于部署授权。只有明确维护窗口、候选全部通
 8. 状态清单变更已提交，主线 CI 对该运行状态提交成功；
 9. 回滚容器和快照真实存在，候选与临时资源已精确清理。
 
-回滚也属于生产生命周期操作，只能由独立后台任务执行。当前状态清单声明的唯一正式回滚点为
-``.19` 容器 `octopus-mumu19-rollback-20260820T192318Z` 和 `.20` 切换快照（`/opt/octopus/
-backups/pre-v0.10.2-mumu.20-cutover-20260820T192318Z/`）。历史回滚容器 `.12`、`.13`
-及旧版快照已清理，不再支持回滚。不得复制旧文档中的前台 Docker 命令。vps76 的历史小型数据
-副本和已停止的 `hureru/octopus:latest` 不是热备或受支持的回滚版本。
+回滚也属于生产生命周期操作，只能由独立后台任务执行。当前唯一保留的正式回滚点为
+`.20` 切换快照（`/opt/octopus/backups/pre-v0.10.2-mumu.20-cutover-20260820T192318Z/`）
+和本地 `.19` 镜像 `31787cf29681`（回滚容器已清理，可用镜像重建容器回滚）。历史回滚容器
+`.12`、`.13`、`.17` 及旧版快照已清理，不再支持回滚。不得复制旧文档中的前台 Docker 命令。
+vps76 的历史小型数据副本和已停止的 `hureru/octopus:latest` 不是热备或受支持的回滚版本。
 
 ## 已知事故与处理
 
