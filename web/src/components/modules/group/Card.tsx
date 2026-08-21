@@ -269,12 +269,12 @@ export function GroupCard({ group }: { group: Group }) {
     }, [group.first_token_time_out, group.session_keep_time, group.retry_enabled, group.max_retries, group.protocol_mode, group.preferred_protocols, group.compress_config, group.id, group.items, group.match_regex, group.mode, group.name, onSuccess, onError, updateGroup]);
 
     return (
-        <article className="relative group/card flex flex-col rounded-3xl border border-border bg-card text-card-foreground p-4 custom-shadow">
+        <article className="relative group/card flex flex-col rounded-2xl border border-border bg-card text-card-foreground p-3 custom-shadow">
             <header className="flex items-start justify-between mb-3 relative overflow-visible rounded-xl -mx-1 px-1 -my-1 py-1">
                 <div className="relative flex-1 mr-2 min-w-0 group/title">
                     <Tooltip side="top" sideOffset={10} align="center">
                         <TooltipTrigger asChild>
-                            <h3 className="text-lg font-bold truncate">{group.name}</h3>
+                            <h3 className="text-base font-bold truncate">{group.name}</h3>
                         </TooltipTrigger>
                         <TooltipContent key={group.name}>{group.name}</TooltipContent>
                     </Tooltip>
@@ -348,7 +348,7 @@ export function GroupCard({ group }: { group: Group }) {
 
             <GroupHealthBadge groupId={group.id} />
 
-            <section className="rounded-xl border border-border/50 bg-muted/30 overflow-hidden relative h-101">
+            <section className="rounded-lg border border-border/50 bg-muted/30 overflow-hidden relative h-96">
                 <MemberList
                     members={renderedMembers}
                     onReorder={setMembers}
@@ -367,7 +367,7 @@ export function GroupCard({ group }: { group: Group }) {
             {!confirmDelete && (
                 <div
                     className={cn(
-                        'absolute left-3 bottom-3 z-10 flex items-center gap-0.5 rounded-xl bg-card/95 backdrop-blur-sm border border-border/40 shadow-sm p-0.5 transition-opacity duration-200',
+                        'absolute left-2 bottom-2 z-10 flex items-center gap-0.5 rounded-lg bg-card/95 backdrop-blur-sm border border-border/40 shadow-sm p-0.5 transition-opacity duration-200',
                         'opacity-0 pointer-events-none group-hover/card:opacity-100 group-hover/card:pointer-events-auto group-focus-within/card:opacity-100 group-focus-within/card:pointer-events-auto',
                     )}
                 >
