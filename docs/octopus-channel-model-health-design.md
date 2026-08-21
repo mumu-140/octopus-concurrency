@@ -154,7 +154,7 @@ func PeekItemTripped(channelID int, modelName string) bool
 - `retry.go:12-20`：`isRetryableStatus(code) = code==0 || code==429 || code>=500`；`isPassthroughStatus(code) = code==429 || code==503`。
 - `relay_attempt.go:13-18` `circuitFailureKind`：`retryEnabled && isPassthroughStatus` → `FailureSoftRateLimit`，否则 `FailureHard`。
 
-两条链只看 HTTP 状态码，而上游返回的状态码与真实语义大量不一致。以下为 fwq57ys 生产容器 `octopus`（image `v0.10.2-mumu.19`）48 小时日志实测：
+两条链只看 HTTP 状态码，而上游返回的状态码与真实语义大量不一致。以下为 fwq57ys 生产容器 `octopus`（image `v0.10.2-mumu.20`）48 小时日志实测：
 
 状态码分布：`403:1056 503:865 400:388 429:319 500:314 401:220 524:147 405:130 402:120 502:82 504:39 422:36 404:28 530:19 522:3 410:2 525:1 520:1`
 

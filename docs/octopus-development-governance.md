@@ -26,18 +26,16 @@ inspect 证据为准。以下四项必须分别记录，不得相互推导：
 ## 当前生产台账
 
 `deploy/fwq57ys/production-state.json` 是当前生产运行指纹的唯一机器可读台账。最近一次已核验的
-生产版本为 `v0.10.2-mumu.19`：应用源码提交为
-`947e5e477c8b66d9f677783d475bc3f3fb5dd642`，生产状态提交为
-`7effc8a0ced6ca3b35640ce896bbbfd4b71c1ee2`，运行镜像 ID 为
-`sha256:31787cf29681bd2e884f567f8318af7c6c26d25701e5cf18f82516b1c4141810`，容器 ID 为
-`c76ad77100fd85358eef8b539e33def1c63d4c15585589207a78ae12f8a0c0c9`。
+生产版本为 `v0.10.2-mumu.20`：应用源码提交为
+`c57759b`，运行镜像 ID 为
+`sha256:90d6eabb365887ad8bc7b9a6797257dece0394f051dbb04b0e765de555db1500c`，容器 ID 为
+`0fc848e151dd6404bd7e0b54759d33e2d0e5d6b1358978d082dcf84648d2974d`。
 
-本次切换后台任务 `v0.10.2-mumu.19-cutover-20260813T030000Z` 已完成；候选容器
-`octopus-candidate-19` 及其候选数据副本（`octopus-candidate-18`、`octopus-candidate-19`、
-`octopus-candidate-ci19`）已按授权精确清理。随后按授权收整：历史回滚容器 `.12`、`.13`
-已删除，仅保留 `.17` 正式回滚容器作为安全网；历史版本与事故快照（`.11`、`.12`、`.13`、
-`.17`、`pre-relay-content-null`、`pre-stale-container-cleanup`）已清理，仅保留一份最新的
-`.19` 回滚快照。生产容器、生产 SQLite 均未删除。
+本次切换后台任务 `v0.10.2-mumu.20-cutover-20260820T192318Z` 已完成；候选容器
+`octopus-test-20`（端口 35277、空 DB）功能验证通过（HTTP 200、API 路由 401、日志无错误）。
+切回 .20 容器后旧 .19 容器 `octopus-mumu19-rollback-20260820T192318Z` 作为回滚安全网保留。
+历史回滚容器 `.12`、`.13`、`.17` 已清理；仅保留 `.19` 正式回滚容器和最新的
+`.20` 回滚快照。生产容器、生产 SQLite 均未删除。
 
 | --- | --- | --- | --- |
 | 唯一源码 | `/opt/octopus-mumu/` | 开发、测试、构建、提交 | 不在第二份源码中继续工作 |
