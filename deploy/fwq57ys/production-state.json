@@ -29,8 +29,8 @@
     },
     "release": {
       "version": "v0.10.2-mumu.20",
-      "tag": "v0.10.2-mumu.20",
-      "sourceCommit": "0207d80b916bb4c40b7cc706af6042b149c36bf0"
+      "tag": "v0.10.2-mumu.22",
+      "sourceCommit": "c57759b724dd2b8c8d1e2d0792044c75e73c4231"
     },
     "httpChecks": [
       "http://127.0.0.1:35276/",
