@@ -16,7 +16,7 @@
     "container": {
       "name": "octopus",
       "id": "0fc848e151dd6404bd7e0b54759d33e2d0e5d6b1358978d082dcf84648d2974d",
-      "image": "mumu-140/octopus-concurrency:v0.10.2-mumu.23",
+      "image": "mumu-140/octopus-concurrency:v0.10.2-mumu.24",
       "imageId": "sha256:38963b780b31c5bdde8c6906d2faa108689856af79767c1550a1fa92e743976a",
       "startedAt": "2026-08-20T20:04:54.681034098Z",
       "networkMode": "host",
@@ -28,9 +28,9 @@
       }
     },
     "release": {
-      "version": "v0.10.2-mumu.23",
-      "tag": "v0.10.2-mumu.23",
-      "sourceCommit": "0542ec18de777cda1e7defc1852dd8df5b8173de"
+      "version": "v0.10.2-mumu.24",
+      "tag": "v0.10.2-mumu.24",
+      "sourceCommit": "3d3a0b63ba839de612c5bddbc3fdad9e90a58685"
     },
     "httpChecks": [
       "http://127.0.0.1:35276/",
