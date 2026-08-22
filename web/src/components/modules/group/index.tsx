@@ -6,6 +6,14 @@ import { useGroupList } from '@/api/endpoints/group';
 import { useSearchStore, useToolbarViewOptionsStore } from '@/components/modules/toolbar';
 import { VirtualizedGrid } from '@/components/common/VirtualizedGrid';
 
+// 分组卡目标宽度:旧 4 列 ~276px 的 1.5 倍,一行 3-4 个,不排挤 5 列
+const GROUP_COLUMN_MIN_WIDTH = 414;
+function resolveGroupColumns(width: number): number {
+    const byMinWidth = Math.max(1, Math.floor((width + 16) / (GROUP_COLUMN_MIN_WIDTH + 16)));
+    if (byMinWidth >= 4) return width >= 1420 ? 4 : 3;
+    return byMinWidth;
+}
+
 export function Group() {
     const { data: groups } = useGroupList();
     const pageKey = 'group' as const;
@@ -38,7 +46,7 @@ export function Group() {
     return (
         <VirtualizedGrid
             items={visibleGroups}
-            columns={{ default: 1, sm: 2, md: 3, lg: 4 }}
+            columns={resolveGroupColumns}
             estimateItemHeight={520}
             getItemKey={(group, index) => group.id ?? `group-${index}`}
             renderItem={(group) => <GroupCard group={group} />}

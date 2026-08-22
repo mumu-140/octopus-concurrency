@@ -280,12 +280,12 @@ export function GroupCard({ group }: { group: Group }) {
                     </Tooltip>
                 </div>
 
-                <div className="flex items-center gap-1 shrink-0">
+                <div className="flex items-center gap-1.5 shrink-0">
                     <Tooltip side="top" sideOffset={10} align="center">
                         <TooltipTrigger>
                             <CopyIconButton
                                 text={group.name}
-                                className="p-1.5 rounded-lg transition-colors hover:bg-muted text-muted-foreground hover:text-foreground"
+                                className="flex size-8 items-center justify-center rounded-lg border border-transparent transition-all hover:border-border hover:bg-muted active:scale-95 text-muted-foreground hover:text-foreground"
                                 copyIconClassName="size-4"
                                 checkIconClassName="size-4 text-primary"
                             />
@@ -298,7 +298,7 @@ export function GroupCard({ group }: { group: Group }) {
                     <ProtocolPolicyPopover group={group} />
 
                                         <MorphingDialog>
-                        <MorphingDialogTrigger className="p-1.5 rounded-lg transition-colors hover:bg-muted text-muted-foreground hover:text-foreground">
+                        <MorphingDialogTrigger className="flex size-8 items-center justify-center rounded-lg border border-transparent transition-all hover:border-border hover:bg-muted active:scale-95 text-muted-foreground hover:text-foreground">
                             <Tooltip side="top" sideOffset={10} align="center">
                                 <TooltipTrigger asChild>
                                     <Pencil className="size-4" />
@@ -387,7 +387,7 @@ export function GroupCard({ group }: { group: Group }) {
                                     );
                                 }}
                                 className={cn(
-                                    'p-1.5 rounded-lg transition-colors hover:bg-muted disabled:opacity-50 disabled:pointer-events-none',
+                                    'flex size-8 items-center justify-center rounded-lg border border-transparent transition-all hover:border-border hover:bg-muted active:scale-95 disabled:opacity-50 disabled:pointer-events-none',
                                     group.pinned ? 'text-primary' : 'text-muted-foreground hover:text-foreground',
                                 )}
                             >
@@ -403,7 +403,7 @@ export function GroupCard({ group }: { group: Group }) {
                                 layoutId={`delete-btn-group-${group.id}`}
                                 type="button"
                                 onClick={() => setConfirmDelete(true)}
-                                className="p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
+                                className="flex size-8 items-center justify-center rounded-lg border border-transparent transition-all hover:border-destructive/30 hover:bg-destructive/10 active:scale-95 text-muted-foreground hover:text-destructive"
                             >
                                 <Trash2 className="size-4" />
                             </motion.button>

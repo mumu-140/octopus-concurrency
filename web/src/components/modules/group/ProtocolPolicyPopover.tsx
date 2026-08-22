@@ -67,7 +67,7 @@ export function ProtocolPolicyPopover({ group }: { group: Group }) {
                 <button
                     type="button"
                     disabled={!group.id}
-                    className="p-1.5 rounded-lg transition-colors hover:bg-muted text-muted-foreground hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+                    className="flex size-8 items-center justify-center rounded-lg border border-transparent transition-all hover:border-border hover:bg-muted active:scale-95 text-muted-foreground hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
                     aria-label={t('protocol.quickEdit')}
                 >
                     <Tooltip side="top" sideOffset={10} align="center">

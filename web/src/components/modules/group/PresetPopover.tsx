@@ -154,7 +154,7 @@ export function PresetPopover({ group }: PresetPopoverProps) {
                 <PopoverTrigger asChild>
                     <button
                         type="button"
-                        className="p-1.5 rounded-lg transition-colors hover:bg-muted text-muted-foreground hover:text-foreground"
+                        className="flex size-8 items-center justify-center rounded-lg border border-transparent transition-all hover:border-border hover:bg-muted active:scale-95 text-muted-foreground hover:text-foreground"
                     >
                         <Tooltip side="top" sideOffset={10} align="center">
                             <TooltipTrigger asChild>
